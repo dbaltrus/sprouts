@@ -169,19 +169,18 @@ var data = (function () {
   function clockwise(edge) {
     var sum = 0;
     traverse(edge, function (e) {
-      var pairs, count = 0;
+      var pairs;
       pairs = d3.pairs(e.line);
       pairs.forEach(function (p) {
-        count += (p[1].x - p[0].x) * (p[1].y + p[0].y);
+        if (e.reversed) {
+          sum += (p[0].x - p[1].x) * (p[0].y + p[1].y);
+        } else {
+          sum += (p[1].x - p[0].x) * (p[0].y + p[1].y);
+        }
       });
-      if (e.reversed) {
-        sum -= count;
-      } else {
-        sum += count;
-      }
       return e.succ;
     });
-    return sum <= 0;
+    return sum >= 0;
   }
 
   function markRegion(region) {
@@ -209,17 +208,17 @@ var data = (function () {
     }
   }
 
-  function straddle(p1, p2, q1, q2, allow_start, allow_end) {
+  function straddle(p1, p2, q1, q2, allowStart, allowEnd) {
     var v, sgn1, sgn2, sgn3;
     v = subtract(p1, p2);
     sgn1 = cross(subtract(q1, p1), v);
     // Allow line segments to touch so that polylines and line clusters at sptots
     // are allowed.
-    if (allow_start && sgn1 === 0) {
+    if (allowStart && sgn1 === 0) {
       return false;
     }
     sgn2 = cross(subtract(q2, p1), v);
-    if (allow_end && sgn2 === 0) {
+    if (allowEnd && sgn2 === 0) {
       return false;
     }
     sgn3 = sgn1 * sgn2;
@@ -229,14 +228,14 @@ var data = (function () {
     return false;
   }
 
-  function segmentsTouch(p1, p2, q1, q2, allow_start, allow_end) {
-    if (straddle(p1, p2, q1, q2, allow_start, allow_end) && straddle(q1, q2, p1, p2)) {
+  function segmentsTouch(p1, p2, q1, q2, allowStart, allowEnd) {
+    if (straddle(p1, p2, q1, q2, allowStart, allowEnd) && straddle(q1, q2, p1, p2)) {
       return true;
     }
     return false;
   }
 
-  function touch(line1, line2, allow_start, allow_end) {
+  function touch(line1, line2, allowStart, allowEnd) {
     var l1, l2, i, j;
     l1 = d3.pairs(line1);
     l2 = d3.pairs(line2);
@@ -244,7 +243,7 @@ var data = (function () {
     while (i--) {
       j = l2.length;
       while (j--) {
-        if (segmentsTouch(l1[i][0], l1[i][1], l2[j][0], l2[j][1], allow_start, allow_end)) {
+        if (segmentsTouch(l1[i][0], l1[i][1], l2[j][0], l2[j][1], allowStart, allowEnd)) {
           return true;
         }
       }
@@ -252,10 +251,10 @@ var data = (function () {
     return false;
   }
 
-  function touchesAnything(line, allow_start, allow_end) {
+  function touchesAnything(line, allowStart, allowEnd) {
     var i = lines.length;
     while (i--) {
-      if (touch(lines[i], line, allow_start, allow_end)) {
+      if (touch(lines[i], line, allowStart, allowEnd)) {
         return true;
       }
     }
@@ -330,9 +329,9 @@ var data = (function () {
     if (boundary1 === boundary2) {
       lastRegion += 1;
       if (clockwise(edge1)) {
-        newRegion = edge1;
-      } else {
         newRegion = edge2;
+      } else {
+        newRegion = edge1;
       }
       setRegion(newRegion, lastRegion);
       i = spots.length;
@@ -356,8 +355,19 @@ var data = (function () {
     endSpot.neighbours.push(edge2);
   }
 
+  function obeysExpectation(spot, line) {
+    var succ;
+    succ = getSucc(spot, line);
+    if (!succ) {
+      return true;
+    }
+    return succ.pred.pred.toSpot.id <= succ.toSpot.id;
+  }
+
   function addEdge(startSpot, endSpot, line) {
-    var line2, newSpot, i;
+    var line2, newSpot, i, obeysExpectation1, obeysExpectation2;
+    obeysExpectation1 = obeysExpectation(startSpot, line);
+    obeysExpectation2 = obeysExpectation(endSpot, line);
     i = line.length - 1;
     while (--i) {
       vertices.push(line[i]);
@@ -367,7 +377,7 @@ var data = (function () {
     lines.push(line2);
     newSpot = spots[addSpot(line2[0], null, null)];
     addSubEdge(startSpot, newSpot, line);
-    addSubEdge(endSpot, newSpot, line2);
+    addSubEdge(newSpot, endSpot, line2);
   }
 
   function createBorder(width, height) {
@@ -524,13 +534,13 @@ var graphics = (function () {
 
   facade.init();
 
-  var svg_triangles = d3.select('body').append('svg').attr('tabindex', 1);
+  var svgTriangles = d3.select('body').append('svg').attr('tabindex', 1);
 
-  var svg_centroids = d3.select('body').append('svg').attr('tabindex', 1);
+  var svgCentroids = d3.select('body').append('svg').attr('tabindex', 1);
 
-  var svg_lines = d3.select('body').append('svg').attr('tabindex', 1);
+  var svgLines = d3.select('body').append('svg').attr('tabindex', 1);
 
-  var svg_spots = d3.select('body').append('svg').attr('tabindex', 1);
+  var svgSpots = d3.select('body').append('svg').attr('tabindex', 1);
 
   d3.select(window).on('mousemove', mousemove).on('mouseup', mouseup);
 
@@ -545,7 +555,7 @@ var graphics = (function () {
     interpolate('linear');
 
   function redrawLines(animate) {
-    var line = svg_lines.selectAll('path').data(data.lines.slice(1));
+    var line = svgLines.selectAll('path').data(data.lines.slice(1));
     line.enter().append('path').attr('class', 'line');
     line.exit().remove();
     if (animate) {
@@ -559,14 +569,14 @@ var graphics = (function () {
   function drawTriangles() {
     var line, triangles;
     triangles = visualization.triangulate(data.vertices);
-    line = svg_triangles.selectAll('path').data(triangles);
+    line = svgTriangles.selectAll('path').data(triangles);
     line.enter().append('path').attr('class', 'triangle');
     line.exit().remove();
     line.attr('d', triangleGenerator);
   }
 
   function redrawSpots() {
-    var circle = svg_spots.selectAll('circle').data(data.spots);
+    var circle = svgSpots.selectAll('circle').data(data.spots);
     circle.enter().
       append('circle').
       on('mousedown', mousedown).
@@ -580,7 +590,7 @@ var graphics = (function () {
       attr('cx', function(d) { return scaleX(d.vertex.x); }).
       attr('cy', function(d) { return scaleY(d.vertex.y); });
     circle.classed('dead', function (d) { return data.dead(d); });
-    var text = svg_spots.selectAll('text').data(data.spots);
+    var text = svgSpots.selectAll('text').data(data.spots);
     text.enter().append('text').
       text(function(d) { return '' + d.id; });
     text.
@@ -589,7 +599,7 @@ var graphics = (function () {
   }
 
   function moveSpots() {
-    var circle = svg_spots.selectAll('circle').data(data.spots);
+    var circle = svgSpots.selectAll('circle').data(data.spots);
     circle.transition().duration(750).
       attr('cx', function(d) { return scaleX(d.vertex.x); }).
       attr('cy', function(d) { return scaleY(d.vertex.y); });
@@ -601,7 +611,7 @@ var graphics = (function () {
   }
 
   function mousemove() {
-    var position = d3.mouse(svg_lines.node());
+    var position = d3.mouse(svgLines.node());
     facade.drawLine({x: scaleXBack(position[0]), y: scaleYBack(position[1])});
     redrawLines();
   }
