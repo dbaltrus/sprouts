@@ -56,16 +56,18 @@ var data = (function () {
   }
 
   function addSpot(vertex, region, boundary) {
+    var spot;
     // Add a one point line so that nothing can go through this point.
     lines.push([vertex, vertex]);
-    spots.push({
-      id: spots.length,
+    spot = {
+      id: spots.length + 1,
       vertex: vertex,
       region: region,
       boundary: boundary,
       neighbours: []
-    });
-    return spots.length - 1;
+    };
+    spots.push(spot);
+    return spot;
   }
 
   function getFirstSegment(spot, line) {
@@ -266,7 +268,7 @@ var data = (function () {
     y = ray[0].y;
     l = d3.pairs(line);
     l.forEach(function (s) {
-      if (straddle(ray[0], ray[1], s[0], s[1], true) &&
+      if (straddle(ray[0], ray[1], s[0], s[1]) &&
         straddle(s[0], s[1], ray[0], ray[1], true)) {
         if (s[0].y === y && s[0].y >= s[1].y) {
           return;
@@ -281,16 +283,51 @@ var data = (function () {
   }
 
   function inside(region, point) {
-    var i, ray, count;
-    ray = [point, {x: point.x, y: Number.MAX_VALUE}];
-    count = 0;
+    var i, ray1, ray2, count1, count2;
+    // Cast rays to both sides to eliminate border points.
+    ray1 = [point, {x: Number.MAX_VALUE, y: point.y}];
+    ray2 = [point, {x: Number.MIN_VALUE, y: point.y}];
+    count1 = 0;
+    count2 = 0;
     i = edges.length;
     while (i--) {
       if (edges[i].region === region) {
-        count += countRayTouches(edges[i].line, ray);
+        count1 += countRayTouches(edges[i].line, ray1);
+        count2 += countRayTouches(edges[i].line, ray2);
       }
     }
-    return count % 2 === 1;
+    return (count1 % 2 === 1) && (count2 % 2 === 1);
+  }
+
+  function spotIn(spot, value, getter) {
+    var i;
+    if (getter(spot) === value) {
+      return true;
+    }
+    i = spot.neighbours.length;
+    while (i--) {
+      if (getter(spot.neighbours[i]) === value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function spotInRegion(spot, region) {
+    return spotIn(spot, region, function (v) { return v.region; });
+  }
+
+  function spotInBoundary(spot, boundary) {
+    return spotIn(spot, boundary, function (v) { return v.boundary; });
+  }
+
+  function holdsExpectation(spot, line) {
+    var succ;
+    succ = getSucc(spot, line);
+    if (!succ) {
+      return true;
+    }
+    return succ.pred.pred.toSpot.id <= succ.toSpot.id;
   }
 
   function setNeighbours(edge1, edge2, succ) {
@@ -305,82 +342,102 @@ var data = (function () {
     }
   }
 
-  function addSubEdge(startSpot, endSpot, line) {
-    var succ1, succ2, region, boundary1, boundary2, edge1, edge2, newRegion, i, j;
+  function connect(startSpot, endSpot, line, region, boundary) {
+    var edge1, edge2, succ1, succ2;
+    edge1 = createEdge(endSpot, line, false, region, boundary);
+    edge2 = createEdge(startSpot, line, true, region, boundary);
     succ1 = getSucc(startSpot, line);
     succ2 = getSucc(endSpot, line);
-    region = getRegion(startSpot, succ1);
-    boundary1 = getBoundary(startSpot, succ1);
-    boundary2 = getBoundary(endSpot, succ2);
+    setNeighbours(edge1, edge2, succ2);
+    setNeighbours(edge2, edge1, succ1);
+    startSpot.neighbours.push(edge1);
+    endSpot.neighbours.push(edge2);
+  }
+
+  function switchRegion(spot, oldRegion, newRegion) {
+    var i = spot.neighbours.length;
+    if (i === 0) {
+      if (spot.region === oldRegion) {
+        spot.region = newRegion;
+      }
+    } else {
+      while (i--) {
+        if (spot.neighbours[i].region === oldRegion) {
+          spot.neighbours[i].region = newRegion;
+        }
+      }
+    }
+  }
+
+  function addEdge(startSpot, endSpot, line) {
+    var line2,
+        startSpotSucc, endSpotSucc,
+        holdsExpectation1, holdsExpectation2,
+        at, atSpots,
+        spotListClockwise, spotList,
+        newSpot, region, boundary, boundary2,
+        newRegionEdge,
+        regionSpots, newRegionSpots,
+        i;
+    line2 = line.splice(line.length / 2, Number.MAX_VALUE);
+    line.push(line2[0]);
+    lines.push(line2);
+    newSpot = addSpot(line2[0], null, null);
+    startSpotSucc = getSucc(startSpot, line);
+    endSpotSucc = getSucc(endSpot, line2);
+    holdsExpectation1 = holdsExpectation(startSpot, line) ? '' : '!';
+    holdsExpectation2 = holdsExpectation(endSpot, line2) ? '' : '!';
+    region = getRegion(startSpot, startSpotSucc);
+    boundary = getBoundary(startSpot, startSpotSucc);
+    boundary2 = getBoundary(endSpot, endSpotSucc);
+    if (boundary !== boundary2 && endSpotSucc) {
+      setBoundary(endSpotSucc, boundary);
+    }
+    connect(startSpot, newSpot, line, region, boundary);
+    connect(newSpot, endSpot, line2, region, boundary);
+    if (boundary === boundary2) {
+      lastRegion += 1;
+      if (clockwise(newSpot.neighbours[0])) {
+        newRegionEdge = newSpot.neighbours[1];
+        spotListClockwise = '';
+      } else {
+        newRegionEdge = newSpot.neighbours[0];
+        spotListClockwise = '!';
+      }
+      setRegion(newRegionEdge, lastRegion);
+      regionSpots = spots.
+        filter(function (spot) { return spotInRegion(spot, region); });
+      regionSpots = regionSpots.
+        filter(function (spot) { return !spotInBoundary(spot, boundary); });
+      atSpots = regionSpots.filter(function (spot) { return !dead(spot); });
+      at = (atSpots.length > 0) ? '@' + atSpots[0].id : '';
+      newRegionSpots = regionSpots.
+        filter(function (spot) { return inside(lastRegion, spot.vertex); });
+      spotList = newRegionSpots.
+        filter(function (spot) { return !dead(spot); }).
+        map(function (spot) { return spot.id; }).join(',');
+      i = newRegionSpots.length;
+      while (i--) {
+        switchRegion(newRegionSpots[i], region, lastRegion);
+      }
+    }
     // We no longer need to store region and boundary information in the spots.
     startSpot.region = null;
     endSpot.region = null;
     startSpot.boundary = null;
     endSpot.boundary = null;
-    if (boundary1 !== boundary2) {
-      if (succ2) {
-        setBoundary(succ2, boundary1);
-      }
+    if (boundary === boundary2) {
+      return startSpot.id + holdsExpectation1 +
+        '(' + newSpot.id + at + ')' +
+        holdsExpectation2 + endSpot.id +
+        ((spotList === '') ? '' : spotListClockwise + '[' + spotList + ']');
     }
-    edge1 = createEdge(endSpot, line, false, region, boundary1);
-    edge2 = createEdge(startSpot, line, true, region, boundary1);
-    setNeighbours(edge1, edge2, succ2);
-    setNeighbours(edge2, edge1, succ1);
-    if (boundary1 === boundary2) {
-      lastRegion += 1;
-      if (clockwise(edge1)) {
-        newRegion = edge2;
-      } else {
-        newRegion = edge1;
-      }
-      setRegion(newRegion, lastRegion);
-      i = spots.length;
-      while (i--) {
-        if (inside(lastRegion, spots[i].vertex)) {
-          j = spots[i].neighbours.length;
-          if (j === 0) {
-            spots[i].region = lastRegion;
-          } else {
-            while (j--) {
-              if (spots[i].neighbours[j].boundary !== boundary1 &&
-                  spots[i].neighbours[j].region === region) {
-                setRegion(spots[i].neighbours[j], lastRegion);
-              }
-            }
-          }
-        }
-      }
-    }
-    startSpot.neighbours.push(edge1);
-    endSpot.neighbours.push(edge2);
+    return startSpot.id + holdsExpectation1 +
+      '(' + newSpot.id + ')' +
+      holdsExpectation2 + endSpot.id;
   }
 
-  function obeysExpectation(spot, line) {
-    var succ;
-    succ = getSucc(spot, line);
-    if (!succ) {
-      return true;
-    }
-    return succ.pred.pred.toSpot.id <= succ.toSpot.id;
-  }
-
-  function addEdge(startSpot, endSpot, line) {
-    var line2, newSpot, i, obeysExpectation1, obeysExpectation2;
-    obeysExpectation1 = obeysExpectation(startSpot, line);
-    obeysExpectation2 = obeysExpectation(endSpot, line);
-    i = line.length - 1;
-    while (--i) {
-      vertices.push(line[i]);
-    }
-    line2 = line.splice(line.length / 2, Number.MAX_VALUE);
-    line.push(line2[0]);
-    lines.push(line2);
-    newSpot = spots[addSpot(line2[0], null, null)];
-    addSubEdge(startSpot, newSpot, line);
-    addSubEdge(newSpot, endSpot, line2);
-  }
-
-  function createBorder(width, height) {
+  function createFrame(width, height) {
     var line, p1, p2, p3, p4;
     p1 = addVertex(0, 0);
     p2 = addVertex(width, 0);
@@ -399,7 +456,7 @@ var data = (function () {
     addSpot: addSpot,
     dead: dead,
     lines: lines,
-    createBorder: createBorder,
+    createFrame: createFrame,
     touchesAnything: touchesAnything,
     distance: distance,
     add: add,
@@ -426,7 +483,7 @@ var facade = (function () {
 
   function init() {
     var i, vertex;
-    data.createBorder(settings.width, settings.height);
+    data.createFrame(settings.width, settings.height);
     i = settings.numberOfSpots;
     while (i--) {
       vertex = data.addVertex(
@@ -492,7 +549,7 @@ var facade = (function () {
         // Remove the placeholder.
         startSpot.neighbours.pop();
         newLine.push(spot.vertex);
-        data.addEdge(startSpot, spot, newLine);
+        console.log(data.addEdge(startSpot, spot, newLine));
         newLine = null;
         startSpot = null;
       } else {
