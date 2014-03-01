@@ -203,6 +203,24 @@ var data = (function () {
     });
   }
 
+  function getAllBoundarySpots(spot) {
+    var i, boundary, spots;
+    if (spot.boundary) {
+      return getBoundarySpots(spot.boundary);
+    }
+    console.log(spot);
+    i = spot.neighbours.length;
+    boundary = null;
+    spots = [];
+    while (i--) {
+      if (boundary !== spot.neighbours[i].boundary) {
+        boundary = spot.neighbours[i].boundary;
+        spots.push.apply(spots, getBoundarySpots(boundary));
+      }
+    }
+    return spots;
+  }
+
   function traverse(edge, lambda) {
     var current = edge;
     do {
@@ -618,7 +636,9 @@ var data = (function () {
     getRegion: getRegion,
     getFirstSegment: getFirstSegment,
     getFirstEdgeSegment: getFirstEdgeSegment,
-    getBoundaryAsArray: getBoundaryAsArray
+    getBoundaryAsArray: getBoundaryAsArray,
+    getRegionSpots: getRegionSpots,
+    getAllBoundarySpots: getAllBoundarySpots
   };
 }());
 
@@ -1111,11 +1131,12 @@ var computerMove = (function () {
     }
   }
 
-  function getCommonRegion(start, startHolds, end, endHolds, at) {
-    var i, j, k;
-    start = getRegions(start, startHolds);
-    end = getRegions(end, endHolds);
-    at = at ? getRegions(at, null) : false;
+  function getCommonRegion(startSpot, startHolds, endSpot, endHolds, atSpot, boundary) {
+    var i, j, k, regions, regionSpots, boundarySpots, start, end, at;
+    start = getRegions(startSpot, startHolds);
+    end = getRegions(endSpot, endHolds);
+    at = at ? getRegions(atSpot, null) : false;
+    regions = [];
     i = start.length;
     while (i--) {
       j = end.length;
@@ -1129,11 +1150,24 @@ var computerMove = (function () {
               }
             }
           } else {
-            return start[i];
+            regions.push(start[i]);
           }
         }
       }
     }
+    if (regions.length < 2) {
+      return regions[0];
+    }
+    regionSpots = data.getRegionSpots(regions[0]);
+    boundarySpots = data.getAllBoundarySpots(startSpot);
+    console.log(boundarySpots);
+    i = regionSpots.length;
+    while (i--) {
+      if (boundarySpots.indexOf(regionSpots[i]) < 0) {
+        return regions[1];
+      }
+    }
+    return regions[0];
   }
 
   function getIncommingEdges(triangles, graph, spot, entry) {
@@ -1397,6 +1431,7 @@ var computerMove = (function () {
     startBoundaryNr = data.getBoundary(startSpot, startEntry);
     endBoundaryNr = data.getBoundary(endSpot, endEntry);
     start = getIncommingEdges(triangles, graph, startSpot, startEntry);
+    console.log(endEntry);
     end = getIncommingEdges(triangles, graph, endSpot, endEntry);
     if (startBoundaryNr === endBoundaryNr) {
 
