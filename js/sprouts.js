@@ -7,12 +7,17 @@ var data = (function () {
       lines = [],
       edges = [];
 
-  function addVertex(x, y) {
-    vertices.push({
+  function addVertex(point) {
+    point.id = vertices.length;
+    vertices.push(point);
+    return point;
+  }
+
+  function point(x, y) {
+    return {
       x: x,
       y: y
-    });
-    return vertices[vertices.length - 1];
+    };
   }
 
   function length(point, squared) {
@@ -72,11 +77,22 @@ var data = (function () {
 
   function getFirstSegment(spot, line) {
     var last;
+    if (!line) {
+      return null;
+    }
     if (spot.vertex === line[0]) {
       return [line[0], line[1]];
     }
     last = line.length - 1;
     return [line[last], line[last - 1]];
+  }
+
+  function getFirstEdgeSegment(edge) {
+    if (edge.reversed) {
+      return [edge.line[edge.line.length - 1], edge.line[edge.line.length - 2]];
+    } else {
+      return [edge.line[0], edge.line[1]];
+    }
   }
 
   function getAngle(segment) {
@@ -87,6 +103,34 @@ var data = (function () {
       return angle + 2 * Math.PI;
     }
     return angle;
+  }
+
+  // TODO use this for getSucc
+  function getPointSucc(point, neighbours, segment) {
+    var lineAngle, difference, next, nextCandidate, min, minCandidate, i;
+    next = Number.MAX_VALUE;
+    min = Number.MAX_VALUE;
+    nextCandidate = null;
+    minCandidate = null;
+    if (neighbours.length === 0) {
+      return null;
+    }
+    lineAngle = getAngle(segment);
+    i = neighbours.length;
+    while (i--) {
+      difference = getAngle([point, neighbours[i]]) - lineAngle;
+      if (0 < difference && (difference < next)) {
+        next = difference;
+        nextCandidate = neighbours[i];
+      } else if (difference < min) {
+        min = difference;
+        minCandidate = neighbours[i];
+      }
+    }
+    if (nextCandidate !== null) {
+      return nextCandidate;
+    }
+    return minCandidate;
   }
 
   function getSucc(spot, line) {
@@ -147,6 +191,18 @@ var data = (function () {
     return spot.boundary;
   }
 
+  function getRegionSpots(region) {
+    return spots.filter(function (spot) {
+      return spotInRegion(spot, region);
+    });
+  }
+
+  function getBoundarySpots(boundary) {
+    return spots.filter(function (spot) {
+      return spotInBoundary(spot, boundary);
+    });
+  }
+
   function traverse(edge, lambda) {
     var current = edge;
     do {
@@ -168,21 +224,46 @@ var data = (function () {
     });
   }
 
+  function getBoundaryAsArray(spot, edge) {
+    var boundary, line;
+    if (!edge) {
+      return [spot.vertex];
+    }
+    boundary = [];
+    traverse(edge, function(e) {
+      line = e.line.slice(0);
+      if (e.reversed) {
+        line.reverse();
+      }
+      line.pop();
+      boundary.push.apply(boundary, line);
+      return e.succ;
+    });
+    return boundary;
+  }
+
+  function lineClockwise(line, reversed, fin) {
+    var sum = 0;
+    d3.pairs(line).forEach(function (p) {
+      if (reversed) {
+        sum += (p[0].x - p[1].x) * (p[0].y + p[1].y);
+      } else {
+        sum += (p[1].x - p[0].x) * (p[0].y + p[1].y);
+      }
+    });
+    if (fin) {
+      return sum > 0;
+    }
+    return sum;
+  }
+
   function clockwise(edge) {
     var sum = 0;
     traverse(edge, function (e) {
-      var pairs;
-      pairs = d3.pairs(e.line);
-      pairs.forEach(function (p) {
-        if (e.reversed) {
-          sum += (p[0].x - p[1].x) * (p[0].y + p[1].y);
-        } else {
-          sum += (p[1].x - p[0].x) * (p[0].y + p[1].y);
-        }
-      });
+      sum += lineClockwise(e.line, e.reversed);
       return e.succ;
     });
-    return sum >= 0;
+    return sum > 0;
   }
 
   function markRegion(region) {
@@ -269,7 +350,7 @@ var data = (function () {
     l = d3.pairs(line);
     l.forEach(function (s) {
       if (straddle(ray[0], ray[1], s[0], s[1]) &&
-        straddle(s[0], s[1], ray[0], ray[1], true)) {
+        straddle(s[0], s[1], ray[0], ray[1], true, true)) {
         if (s[0].y === y && s[0].y >= s[1].y) {
           return;
         }
@@ -321,13 +402,11 @@ var data = (function () {
     return spotIn(spot, boundary, function (v) { return v.boundary; });
   }
 
-  function holdsExpectation(spot, line) {
-    var succ;
-    succ = getSucc(spot, line);
-    if (!succ) {
+  function holdsExpectation(edge) {
+    if (!edge) {
       return true;
     }
-    return succ.pred.pred.toSpot.id <= succ.toSpot.id;
+    return edge.pred.pred.toSpot.id <= edge.toSpot.id;
   }
 
   function setNeighbours(edge1, edge2, succ) {
@@ -379,14 +458,18 @@ var data = (function () {
         newRegionEdge,
         regionSpots, newRegionSpots,
         i;
+    i = line.length - 1;
+    while (--i) {
+      addVertex(line[i]);
+    }
     line2 = line.splice(line.length / 2, Number.MAX_VALUE);
     line.push(line2[0]);
     lines.push(line2);
     newSpot = addSpot(line2[0], null, null);
     startSpotSucc = getSucc(startSpot, line);
     endSpotSucc = getSucc(endSpot, line2);
-    holdsExpectation1 = holdsExpectation(startSpot, line) ? '' : '!';
-    holdsExpectation2 = holdsExpectation(endSpot, line2) ? '' : '!';
+    holdsExpectation1 = holdsExpectation(startSpotSucc) ? '' : '!';
+    holdsExpectation2 = holdsExpectation(endSpotSucc) ? '' : '!';
     region = getRegion(startSpot, startSpotSucc);
     boundary = getBoundary(startSpot, startSpotSucc);
     boundary2 = getBoundary(endSpot, endSpotSucc);
@@ -437,15 +520,67 @@ var data = (function () {
       holdsExpectation2 + endSpot.id;
   }
 
+  function getRegionVertices(region) {
+    var i, j, regionVertices, taken;
+    regionVertices = [];
+    taken = [];
+    i = spots.length;
+    while (i--) {
+      if (spotInRegion(spots[i], region)) {
+        regionVertices.push(spots[i].vertex);
+        taken[spots[i].vertex.id] = true;
+      }
+    }
+    i = edges.length;
+    while (i--) {
+      if (edges[i].region === region) {
+        j = edges[i].line.length;
+        while (j--) {
+          if (!taken[edges[i].line[j].id]) {
+            regionVertices.push(edges[i].line[j]);
+            taken[edges[i].line[j].id] = true;
+          }
+        }
+      }
+    }
+    i = regionVertices.length;
+    while (i--) {
+      regionVertices[i].id = i;
+    }
+    return regionVertices;
+  }
+
   function createFrame(width, height) {
     var line, p1, p2, p3, p4;
-    p1 = addVertex(0, 0);
-    p2 = addVertex(width, 0);
-    p3 = addVertex(width, height);
-    p4 = addVertex(0, height);
+    p1 = addVertex(point(0, 0));
+    p2 = addVertex(point(width, 0));
+    p3 = addVertex(point(width, height));
+    p4 = addVertex(point(0, height));
     line = [p1, p2, p3, p4, p1];
     lines.push(line);
     createEdge(null, line, false, 0);
+  }
+
+  function markEdge(edge) {
+    var i, j, line, angle;
+    line = edge.line;
+    i = line.length - 1;
+    while (--i) {
+      line[i].marked = true;
+    }
+    i = line.length - 1;
+    while (i--) {
+      j = i + 1;
+      if (edge.reversed) {
+        line[i].marked2 = true;
+        line[j].marked2 = true;
+      } else {
+        line[i].marked1 = true;
+        line[j].marked1 = true;
+      }
+      line[i].angle2 = getAngle([line[j], line[i]]);
+      line[j].angle1 = getAngle([line[i], line[j]]);
+    }
   }
 
   return {
@@ -458,6 +593,7 @@ var data = (function () {
     lines: lines,
     createFrame: createFrame,
     touchesAnything: touchesAnything,
+    touch: touch,
     distance: distance,
     add: add,
     subtract: subtract,
@@ -468,7 +604,21 @@ var data = (function () {
     unmarkAll: unmarkAll,
     inside: inside,
     edges: edges,
-    clockwise: clockwise
+    lineClockwise: lineClockwise,
+    clockwise: clockwise,
+    point: point,
+    getAngle: getAngle,
+    getRegionVertices: getRegionVertices,
+    holdsExpectation: holdsExpectation,
+    spotInBoundary: spotInBoundary,
+    traverse: traverse,
+    getSucc: getSucc,
+    getPointSucc: getPointSucc,
+    getBoundary: getBoundary,
+    getRegion: getRegion,
+    getFirstSegment: getFirstSegment,
+    getFirstEdgeSegment: getFirstEdgeSegment,
+    getBoundaryAsArray: getBoundaryAsArray
   };
 }());
 
@@ -478,7 +628,7 @@ var facade = (function () {
   var settings = {
     width: 700,
     height: 700,
-    numberOfSpots: 4
+    numberOfSpots: 3
   };
 
   function init() {
@@ -486,10 +636,10 @@ var facade = (function () {
     data.createFrame(settings.width, settings.height);
     i = settings.numberOfSpots;
     while (i--) {
-      vertex = data.addVertex(
-        settings.width / 2 * (1 + Math.sin(i * 2 * Math.PI / settings.numberOfSpots) / 2),
-        settings.height / 2 * (1 + Math.cos(i * 2 * Math.PI / settings.numberOfSpots) / 2)
-        );
+      vertex = data.addVertex(data.point(
+          settings.width / 2 * (1 + Math.sin(i * 2 * Math.PI / settings.numberOfSpots) / 2),
+          settings.height / 2 * (1 + Math.cos(i * 2 * Math.PI / settings.numberOfSpots) / 2)
+        ));
       data.addSpot(vertex, data.lastRegion, i);
     }
   }
@@ -604,7 +754,8 @@ var graphics = (function () {
   var lineGenerator = d3.svg.line().
     x(function (d) { return scaleX(d.x); }).
     y(function (d) { return scaleY(d.y); }).
-    interpolate('basis');
+    //interpolate('cardinal');
+    interpolate('linear');
 
   var triangleGenerator = d3.svg.line().
     x(function (d) { return scaleX(d.x); }).
@@ -623,10 +774,10 @@ var graphics = (function () {
     line.classed('selected', function (d) { return d.selected; });
   }
 
-  function drawTriangles() {
+  function drawTriangles(region) {
     var line, triangles;
-    triangles = visualization.triangulate(data.vertices);
-    line = svgTriangles.selectAll('path').data(triangles);
+    line = svgTriangles.selectAll('path').
+      data(window.triangles || computerMove.getTriangles(data.vertices, data.lines));
     line.enter().append('path').attr('class', 'triangle');
     line.exit().remove();
     line.attr('d', triangleGenerator);
@@ -649,7 +800,7 @@ var graphics = (function () {
     circle.classed('dead', function (d) { return data.dead(d); });
     var text = svgSpots.selectAll('text').data(data.spots);
     text.enter().append('text').
-      text(function(d) { return '' + d.id; });
+      text(function(d) { return d.id.toString(); });
     text.
       attr('x', function(d) { return scaleX(d.vertex.x) + 20; }).
       attr('y', function(d) { return scaleY(d.vertex.y) + 6; });
@@ -669,7 +820,7 @@ var graphics = (function () {
 
   function mousemove() {
     var position = d3.mouse(svgLines.node());
-    facade.drawLine({x: scaleXBack(position[0]), y: scaleYBack(position[1])});
+    facade.drawLine(data.point(scaleXBack(position[0]), scaleYBack(position[1])));
     redrawLines();
   }
 
@@ -696,33 +847,649 @@ var graphics = (function () {
 
   return {
     redrawLines: redrawLines,
+    redrawSpots: redrawSpots,
     drawTriangles: drawTriangles
   };
 }());
 
-var visualization = (function () {
-  function triangulate(points) {
-    var input, output, triangles, i;
-    i = points.length;
-    input = [];
+var computerMove = (function () {
+  function getShortestPath(graph, start, end) {
+    var distance, dist, from, queue, i, j, neighbour, neighbours, shortest, path;
+    distance = [];
+    i = graph.length;
     while (i--) {
-      input[i] = [points[i].x, points[i].y];
+      distance[i] = Number.MAX_VALUE;
     }
-    output = Delaunay.triangulate(input);
-    triangles = [];
-    for (i = output.length - 3; i >= 0; i -= 3) {
-      triangles.push([points[output[i]], points[output[i + 1]], points[output[i + 2]]]);
+    queue = [];
+    from = [];
+    i = start.length;
+    while (i--) {
+      distance[start[i]] = 0;
+      queue.push(start[i]);
     }
-    return triangles;
+    i = end.length;
+    while (i--) {
+      if (distance[end[i]] === Number.MAX_VALUE && distance[graph[end[i]].back.id] === 0) {
+        return [graph[end[i]].back, graph[end[i]]];
+      }
+    }
+    i = 0;
+    while (i < queue.length) {
+      neighbours = graph[queue[i]].neighbours.slice(0);
+      j = neighbours.length;
+      while (j--) {
+        neighbour = neighbours[j];
+        dist = distance[queue[i]] + data.distance(graph[queue[i]].point, neighbour.point);
+        if (dist < distance[neighbour.id]) {
+          distance[neighbour.id] = dist;
+          from[neighbour.id] = queue[i];
+          queue.push(neighbour.id);
+        }
+      }
+      i++;
+    }
+    i = end.length;
+    shortest = end[0];
+    while (i--) {
+      if (distance[end[i]] < distance[shortest]) {
+        shortest = end[i];
+      }
+    }
+    if (distance[shortest] === Number.MAX_VALUE) {
+      return null;
+    }
+    path = [graph[shortest]];
+    while (isSet(from[shortest])) {
+      shortest = from[shortest];
+      path.push(graph[shortest]);
+    }
+    path.reverse();
+    return path;
   }
 
-  function getGraph(points, lines) {
-    var triangles;
-    triangles = triangulate(points);
+  function addTriangles(triangles, adjacencyMatrix, points) {
+    var i, triangle;
+    while (points.length > 2) {
+      i = points.length - 1;
+      while (--i) {
+        triangle = [points[i - 1], points[i], points[i + 1], points[i - 1]];
+        if (data.lineClockwise(triangle, false, true)) {
+          d3.pairs(triangle).forEach(function (edge) {
+            adjacencyMatrix[edge[0].id][edge[1].id] = triangles.length;
+          });
+          triangles.push(triangle);
+          points.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  function getTriangles(points, lines) {
+    var output, triangles, i, adjacencyMatrix, getNextEdge, part1, part2, part3;
+    getNextEdge = function (triangle, currentEdge, segment) {
+      var intersecting = [];
+      if (!isSet(triangle) || !isSet(triangles[triangle])) {
+        return null;
+      }
+      d3.pairs(triangles[triangle]).forEach(function (edge) {
+        if (data.touch(edge, segment, true, true)) {
+          intersecting.push(edge);
+        }
+      });
+      if (!currentEdge) {
+        return intersecting[0];
+      }
+      if (currentEdge[0] === intersecting[0][1]) {
+        return intersecting[1];
+      } else {
+        return intersecting[0];
+      }
+    };
+    output = Delaunay.triangulate(points.map(function (point) {
+        return [point.x, point.y];
+      }));
+    triangles = [];
+    for (i = output.length - 3; i >= 0; i -= 3) {
+      triangles.push([
+        points[output[i]],
+        points[output[i + 1]],
+        points[output[i + 2]],
+        points[output[i]]]);
+    }
+    adjacencyMatrix = [];
+    i = points.length;
+    while (i--) {
+      adjacencyMatrix[i] = [];
+    }
+    i = triangles.length;
+    while (i--) {
+      d3.pairs(triangles[i]).forEach(function (edge) {
+        adjacencyMatrix[edge[0].id][edge[1].id] = i;
+      });
+    }
+    i = lines.length;
+    while (i--) {
+      d3.pairs(lines[i]).forEach(function (segment) {
+        var triangle, edge, j;
+        if (segment[0] !== segment[1] &&
+          !isSet(adjacencyMatrix[segment[0].id][segment[1].id]) &&
+          !isSet(adjacencyMatrix[segment[1].id][segment[0].id])) {
+            part1 = [segment[0]];
+            part2 = [segment[0]];
+            j = -1;
+            do {
+              j++;
+              triangle = adjacencyMatrix[segment[0].id][j];
+              edge = getNextEdge(triangle, null, segment);
+            } while (!edge && j < points.length);
+            if (!edge) {
+              console.log(segment);
+              console.error("RUN. It's the end of the World!!!");
+            }
+            triangles[triangle] = null;
+            while (edge) {
+              triangle = adjacencyMatrix[edge[1].id][edge[0].id];
+              if (edge[0] !== part1[part1.length - 1]) {
+                part1.push(edge[0]);
+              }
+              if (edge[1] !== part2[part2.length - 1]) {
+                part2.push(edge[1]);
+              }
+              edge = getNextEdge(triangle, edge, segment);
+              triangles[triangle] = null;
+            }
+            part1.push(segment[1]);
+            part2.push(segment[1]);
+            part3 = part1.slice(0);
+            part3.push(segment[0]);
+            if (data.lineClockwise(part3)) {
+              addTriangles(triangles, adjacencyMatrix, part1);
+              addTriangles(triangles, adjacencyMatrix, part2.reverse());
+            } else {
+              addTriangles(triangles, adjacencyMatrix, part1.reverse());
+              addTriangles(triangles, adjacencyMatrix, part2);
+            }
+        }
+      });
+    }
+    return triangles.filter(function (triangle) {return triangle !== null});
+  }
+
+  function getGraph(triangles, lines) {
+    var graph, triangle, i, j, k, l, edgeMarked, getEdge;
+    graph = [];
+    i = triangles.length;
+    while (i--) {
+      triangle = d3.pairs(triangles[i]);
+      j = 3;
+      while (j--) {
+        if (!graph[triangle[j][0].id]) {
+          graph[triangle[j][0].id] = [];
+        }
+        graph[triangle[j][0].id][triangle[j][1].id] = {
+          start: triangle[j][0],
+          end: triangle[j][1],
+          point: data.add(
+            triangle[j][0],
+            data.multiply(
+              data.subtract(triangle[j][1], triangle[j][0]), 0.6)),
+          neighbours: [],
+          back: null,
+          nextEdge: null
+        };
+      }
+    }
+    lines.forEach(function (line) {
+        line = d3.pairs(line);
+        line.forEach(function (segment) {
+            if (graph[segment[0].id][segment[1].id]) {
+              graph[segment[0].id][segment[1].id]= null;
+            }
+            if (graph[segment[1].id][segment[0].id]) {
+              graph[segment[1].id][segment[0].id]= null;
+            }
+          });
+      });
+    i = triangles.length;
+    while (i--) {
+      triangle = d3.pairs(triangles[i]);
+      j = 3;
+      while (j--) {
+        if (graph[triangle[j][1].id][triangle[j][0].id]) {
+          graph[triangle[j][0].id][triangle[j][1].id].back = graph[triangle[j][1].id][triangle[j][0].id];
+          k = 3;
+          while (k--) {
+            l = (j + 3 - k) % 3;
+            if (l !== j && graph[triangle[l][1].id][triangle[l][0].id]) {
+              graph[triangle[j][0].id][triangle[j][1].id].neighbours.push(graph[triangle[l][1].id][triangle[l][0].id]);
+            }
+          }
+        }
+      }
+    }
+    return graph;
+  }
+
+  function condense(graph) {
+    var condensed = [];
+    graph.forEach(function (vertex) {
+      vertex.forEach(function (edge) {
+        if (edge) {
+          edge.id = condensed.length;
+          condensed.push(edge);
+        }
+      });
+    });
+    return condensed;
+  }
+
+  function getEntry(spot, region, holdsExpectation) {
+    var i;
+    i = spot.neighbours.length;
+    while (i--) {
+      if (spot.neighbours[i].region === region &&
+          data.holdsExpectation(spot.neighbours[i]) === holdsExpectation) {
+        return spot.neighbours[i];
+      }
+    }
+    return null;
+  }
+
+  function getRegions(spot, holds) {
+    if (spot.region !== null) {
+      return [spot.region];
+    } else {
+      return spot.neighbours.map(function (neighbour) {
+        if (holds === null || holds === data.holdsExpectation(neighbour)) {
+          return neighbour.region;
+        } else {
+          return null;
+        }
+      }).filter(function (neighbour) {
+        return neighbour !== null;
+      });
+    }
+  }
+
+  function getCommonRegion(start, startHolds, end, endHolds, at) {
+    var i, j, k;
+    start = getRegions(start, startHolds);
+    end = getRegions(end, endHolds);
+    at = at ? getRegions(at, null) : false;
+    i = start.length;
+    while (i--) {
+      j = end.length;
+      while (j--) {
+        if (start[i] === end[j]) {
+          if (at) {
+            k = at.length;
+            while (k--) {
+              if (start[i] === at[k]) {
+                return start[i];
+              }
+            }
+          } else {
+            return start[i];
+          }
+        }
+      }
+    }
+  }
+
+  function getIncommingEdges(triangles, graph, spot, entry) {
+    var incomming, spotVertex;
+    incomming = [];
+    spotVertex = spot.vertex;
+    graph[spotVertex.id].forEach(function (edge) {
+      if (edge && data.getSucc(spot, [spotVertex, edge.point]) === entry) {
+        incomming.push(edge.back.id);
+      }
+    });
+    if (incomming.length === 0) {
+      triangles.forEach(function (triangle) {
+        if (triangle.indexOf(spotVertex) >= 0) {
+          triangle = d3.pairs(triangle);
+          triangle.forEach(function (edge) {
+            if (graph[edge[0].id][edge[1].id] &&
+                data.getSucc(spot, [spotVertex, graph[edge[0].id][edge[1].id].point]) === entry) {
+              incomming.push(graph[edge[0].id][edge[1].id].id);
+              incomming.push(graph[edge[1].id][edge[0].id].id);
+            }
+          });
+        }
+      });
+    }
+    return incomming;
+  }
+
+  //function pointMarked(point, entry, marks) {
+  //  var neighbours;
+  //  if (!marks[point.id]) {
+  //    return false;
+  //  }
+  //  neighbours = marks[point.id].slice(0);
+  //  entry = {angle: data.getAngle([point, entry])};
+  //  neighbours.push(entry);
+  //  neighbours.sort(function (a, b) {
+  //    return a.angle - b.angle;
+  //  });
+  //  return neighbours[(neighbours.indexOf(entry) + 1) % neighbours.length].value;
+  //}
+
+  function isSet(value) {
+    return value || value === 0;
+  }
+
+  function getBubbles(graph, marked, next, prev, tight) {
+    var i, j, edgeMarked, a, switched;
+    if (tight) {
+      edgeMarked = function (edge) {
+        //return pointMarked(edge.end, edge.point, marked) ||
+        //  (pointMarked(edge.start, edge.point, marked) && pointMarked(edge.end, edge.point, marked));
+        return marked[edge.end.id];
+      };
+    } else {
+      edgeMarked = function (edge) {
+        //return !pointMarked(edge.start, edge.point, marked) && pointMarked(edge.end, edge.point, marked);
+        return marked[edge.end.id] && !marked[edge.start.id];
+      };
+    }
+    i = graph.length;
+    while (i--) {
+      if (edgeMarked(graph[i])) {
+        j = graph[i].neighbours.length;
+        while (j--) {
+          if (edgeMarked(graph[i].neighbours[j])) {
+            next[i] = graph[i].neighbours[j].id;
+            prev[graph[i].neighbours[j].id] = i;
+          }
+        }
+      }
+    }
+    if (tight) {
+      i = graph.length;
+      while (i--) {
+        if (!isSet(next[i]) && isSet(prev[i]) && isSet(next[graph[i].back.id]) && !isSet(prev[graph[i].back.id])) {
+          next[i] = graph[i].back.id;
+        }
+      }
+      i = next.length;
+      while (i--) {
+        if (next[i]) {
+          prev[next[i]] = i;
+        }
+      }
+    }
+  }
+
+  function markSpotBoundary(spot, region, marks, value) {
+    var boundary, edge;
+    if (marks[spot.vertex.id] !== value) {
+      marks[spot.vertex.id] = value;
+      spot.neighbours.forEach(function (neighbour) {
+        if (neighbour.region === region) {
+          edge = neighbour;
+        }
+      });
+      if (edge) {
+        boundary = data.getBoundaryAsArray(spot, edge);
+        boundary.forEach(function (point) {
+          marks[point.id] = value;
+        });
+      }
+    }
+  }
+
+  //function markEdgeBoundary(startEdge, endEdge, marks, value) {
+  //  var boundary1, boundary2, endSegment, i;
+  //  boundary1 = data.getBoundaryAsArray(null, startEdge);
+  //  boundary1.push(boundary1[0]);
+  //  if (endEdge) {
+  //    endSegment = data.getFirstEdgeSegment(endEdge);
+  //    i = boundary1.length;
+  //    while (boundary1[i] !== endSegment[0] || boundary1[i + 1] !== endSegment[1]) {
+  //      i--;
+  //    }
+  //    boundary2 = boundary1.slice(i + 1);
+  //    boundary1 = boundary1.slice(0, i + 2);
+  //    console.log(boundary1.map(function(a){return a.id}));
+  //    console.log(boundary2.map(function(a){return a.id}));
+  //  } else {
+  //    boundary2 = [];
+  //  }
+  //  boundary1 = d3.pairs(boundary1);
+  //  boundary2 = d3.pairs(boundary2);
+  //  boundary1.forEach(function (segment) {
+  //    if (!marks[segment[0].id]) {
+  //      marks[segment[0].id] = [];
+  //    }
+  //    marks[segment[0].id].push({
+  //      angle: data.getAngle(segment),
+  //      value: value
+  //    });
+  //  });
+  //  boundary2.forEach(function (segment) {
+  //    if (!marks[segment[0].id]) {
+  //      marks[segment[0].id] = [];
+  //    }
+  //    marks[segment[0].id].push({
+  //      angle: data.getAngle(segment),
+  //      value: !value
+  //    });
+  //  });
+  //}
+
+  //function markSpotBoundary(spot, region, marks, value) {
+  //  var boundary, edge;
+  //  if (!marks[spot.vertex.id]) {
+  //    spot.neighbours.forEach(function (neighbour) {
+  //      if (neighbour.region === region) {
+  //        edge = neighbour;
+  //      }
+  //    });
+  //    if (edge) {
+  //      markEdgeBoundary(edge, null, marks, value);
+  //    } else {
+  //      marks[spot.vertex.id] = [{
+  //        angle: -1,
+  //        value: value
+  //      }];
+  //    }
+  //  }
+  //}
+
+  function markLine(start, next, marks) {
+    var line = [];
+    while (start !== undefined && !marks[start]) {
+      line.push(start);
+      marks[start] = true;
+      start = next[start];
+    }
+    if (start !== undefined) {
+      line.push(start);
+    }
+    return line;
+  }
+
+  function mergeBubbles(graph, connected, next, prev) {
+    var start, end, path, back, i;
+    start = [];
+    end = [];
+    i = next.length;
+    while (i--) {
+      if (next[i] !== undefined) {
+        if (connected[i]) {
+          start.push(i);
+        } else {
+          end.push(i);
+        }
+      }
+    }
+    if (end.length === 0) {
+      return false;
+    }
+    path = getShortestPath(graph, start, end);
+    if (!path) {
+      return false;
+    }
+    i = path.length - 1;
+    while (--i) {
+      path[i] = graph[path[i].id].back;
+    }
+    back = path.map(function (point) {
+      return point.back;
+    });
+    back[0] = graph[next[path[0].id]];
+    back[back.length - 1] = graph[prev[path[path.length - 1].id]];
+    d3.pairs(path).forEach(function (segment) {
+      next[segment[0].id] = segment[1].id;
+      prev[segment[1].id] = segment[0].id;
+    });
+    d3.pairs(back).forEach(function (segment) {
+      prev[segment[0].id] = segment[1].id;
+      next[segment[1].id] = segment[0].id;
+    });
+    return true;
+  }
+
+  function mergeAllBubbles(graph, start, next, prev) {
+    var connected, line, i;
+    if (start === null) {
+      i = next.length;
+      while (i--) {
+        if (next[i]) {
+          start = i;
+          break;
+        }
+      }
+    }
+    i = 0;
+    do {
+      connected = [];
+      line = markLine(start, next, connected);
+      i += 1;
+      if (i > facade.settings.numberOfSpots) {
+        break;
+      }
+    } while (mergeBubbles(graph, connected, next, prev));
+    return line.map(function (point) {
+      return graph[point];
+    });
+  }
+
+  function getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots) {
+    var i, triangles, graph, line, line2, condensed, marked, region, next, prev, startBoundaryNr, endBoundaryNr, startEntry, endEntry, start, end, connected, startConnection, endConnection, startIncluded;
+    startSpot = data.spots[startSpot - 1];
+    endSpot = data.spots[endSpot - 1];
+    atSpot = data.spots[atSpot - 1];
+    next = [];
+    prev = [];
+    spots = spots.map(function (spot) {
+      return data.spots[spot - 1];
+    });
+    triangles = getTriangles(data.vertices, data.lines);
+    graph = getGraph(triangles, data.lines);
+    condensed = condense(graph);
+    region = getCommonRegion(startSpot, startHolds, endSpot, endHolds, atSpot);
+    console.log(region);
+    startEntry = getEntry(startSpot, region, startHolds);
+    endEntry = getEntry(endSpot, region, endHolds);
+    startBoundaryNr = data.getBoundary(startSpot, startEntry);
+    endBoundaryNr = data.getBoundary(endSpot, endEntry);
+    start = getIncommingEdges(triangles, graph, startSpot, startEntry);
+    end = getIncommingEdges(triangles, graph, endSpot, endEntry);
+    if (startBoundaryNr === endBoundaryNr) {
+
+      marked = [];
+      next = [];
+      prev = [];
+      markSpotBoundary(startSpot, region, marked, true);
+      i = spots.length;
+      while (i--) {
+        if (marked[spots[i].vertex.id]) {
+          startIncluded = true;
+        }
+      }
+      getBubbles(condensed, marked, next, prev, true);
+
+      if (startEntry === endEntry) {
+        i = start.length;
+        while (i--) {
+          if (next[start[i]]) {
+            condensed[start[i]].neighbours.forEach(function (point) {
+              if (next[point.id] && start.indexOf(point.id) >= 0) {
+                startConnection = condensed[start[i]];
+                endConnection = point;
+              }
+            });
+          }
+        }
+        if (startIncluded) {
+          i = startConnection;
+          startConnection = endConnection;
+          endConnection = i;
+        }
+      } else {
+        startConnection = condensed[start[0]];
+        endConnection = condensed[end[0]];
+      }
+      line = markLine(endConnection.id, next, []);
+      next[endConnection.id] = undefined;
+      prev[startConnection.id] = undefined;
+      i = 1;
+      while (condensed[line[i]] !== startConnection) {
+        next[line[i]] = undefined;
+        prev[line[i]] = undefined;
+        i++;
+      }
+
+//      i = next.length;
+//      while (i--) {
+//        if (next[i] || next[i] === 0) {
+//          data.lines.push([condensed[i].point, condensed[next[i]].point]);
+//        }
+//      }
+      //line = mergeAllBubbles(condensed, null, next, prev);
+      //i = line.length - 1;
+      //i = next2.length;
+      //while (i--) {
+      //  if (next2[i] || next2[i] === 0) {
+      //    data.lines.push([condensed[i].point, condensed[next2[i]].point]);
+      //  }
+      //}
+
+      marked = [];
+      spots.forEach(function (spot) {
+        markSpotBoundary(spot, region, marked, true);
+      });
+      markSpotBoundary(startSpot, region, marked, false);
+      getBubbles(condensed, marked, next, prev, false);
+      line = mergeAllBubbles(condensed, startConnection.id, next, prev);
+//      i = next.length;
+//      while (i--) {
+//        if (next[i] || next[i] === 0) {
+//          data.lines.push([condensed[i].point, condensed[next[i]].point]);
+//        }
+//      }
+  //    data.lines.push(line.map(function(a) {return a.point;}));
+
+    } else {
+      line = getShortestPath(condensed, start, end);
+    }
+    line = line.map(function (edge) {
+      return edge.point;
+    });
+    line.unshift(startSpot.vertex);
+    line.push(endSpot.vertex);
+    data.lines.push(line);
+    data.addEdge(startSpot, endSpot, line);
+    graphics.redrawLines();
+    graphics.redrawSpots();
   }
 
   return {
-    triangulate: triangulate
+    getTriangles: getTriangles,
+    getMove: getMove
   };
 }());
 
