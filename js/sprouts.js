@@ -208,7 +208,6 @@ var data = (function () {
     if (spot.boundary) {
       return getBoundarySpots(spot.boundary);
     }
-    console.log(spot);
     i = spot.neighbours.length;
     boundary = null;
     spots = [];
@@ -240,6 +239,16 @@ var data = (function () {
       e.boundary = boundary;
       return e.succ;
     });
+  }
+
+  function getBoundaryEdges(edge) {
+    var boundary, line;
+    boundary = [];
+    traverse(edge, function(e) {
+      boundary.push(e);
+      return e.succ;
+    });
+    return boundary;
   }
 
   function getBoundaryAsArray(spot, edge) {
@@ -637,6 +646,7 @@ var data = (function () {
     getFirstSegment: getFirstSegment,
     getFirstEdgeSegment: getFirstEdgeSegment,
     getBoundaryAsArray: getBoundaryAsArray,
+    getBoundaryEdges: getBoundaryEdges,
     getRegionSpots: getRegionSpots,
     getAllBoundarySpots: getAllBoundarySpots
   };
@@ -648,7 +658,7 @@ var facade = (function () {
   var settings = {
     width: 700,
     height: 700,
-    numberOfSpots: 3
+    numberOfSpots: 4
   };
 
   function init() {
@@ -1003,7 +1013,6 @@ var computerMove = (function () {
               edge = getNextEdge(triangle, null, segment);
             } while (!edge && j < points.length);
             if (!edge) {
-              console.log(segment);
               console.error("RUN. It's the end of the World!!!");
             }
             triangles[triangle] = null;
@@ -1135,7 +1144,7 @@ var computerMove = (function () {
     var i, j, k, regions, regionSpots, boundarySpots, start, end, at;
     start = getRegions(startSpot, startHolds);
     end = getRegions(endSpot, endHolds);
-    at = at ? getRegions(atSpot, null) : false;
+    at = atSpot ? getRegions(atSpot, null) : false;
     regions = [];
     i = start.length;
     while (i--) {
@@ -1160,7 +1169,6 @@ var computerMove = (function () {
     }
     regionSpots = data.getRegionSpots(regions[0]);
     boundarySpots = data.getAllBoundarySpots(startSpot);
-    console.log(boundarySpots);
     i = regionSpots.length;
     while (i--) {
       if (boundarySpots.indexOf(regionSpots[i]) < 0) {
@@ -1177,6 +1185,7 @@ var computerMove = (function () {
     graph[spotVertex.id].forEach(function (edge) {
       if (edge && data.getSucc(spot, [spotVertex, edge.point]) === entry) {
         incomming.push(edge.back.id);
+        incomming.push(edge.id);
       }
     });
     if (incomming.length === 0) {
@@ -1346,7 +1355,7 @@ var computerMove = (function () {
   }
 
   function mergeBubbles(graph, connected, next, prev) {
-    var start, end, path, back, i;
+    var start, end, path, back, i, a;
     start = [];
     end = [];
     i = next.length;
@@ -1366,15 +1375,25 @@ var computerMove = (function () {
     if (!path) {
       return false;
     }
-    i = path.length - 1;
-    while (--i) {
-      path[i] = graph[path[i].id].back;
-    }
+    //if (data.distance(path[0].point, path[1].point, true) > data.distance(path[0].point, path[1].back.point, true)) {
+      i = path.length - 1;
+      while (--i) {
+        path[i] = graph[path[i].id].back;
+      }
+    //}
     back = path.map(function (point) {
       return point.back;
     });
     back[0] = graph[next[path[0].id]];
     back[back.length - 1] = graph[prev[path[path.length - 1].id]];
+    if (data.touch([path[0].point, path[1].point], [back[0].point, back[1].point])) {
+      i = path.length - 1;
+      while (--i) {
+        a = path[i];
+        path[i] = back[i];
+        back[i] = a;
+      }
+    }
     d3.pairs(path).forEach(function (segment) {
       next[segment[0].id] = segment[1].id;
       prev[segment[1].id] = segment[0].id;
@@ -1412,26 +1431,18 @@ var computerMove = (function () {
   }
 
   function getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots) {
-    var i, triangles, graph, line, line2, condensed, marked, region, next, prev, startBoundaryNr, endBoundaryNr, startEntry, endEntry, start, end, connected, startConnection, endConnection, startIncluded;
-    startSpot = data.spots[startSpot - 1];
-    endSpot = data.spots[endSpot - 1];
-    atSpot = data.spots[atSpot - 1];
+    var i, j, triangles, graph, line, line2, condensed, marked, region, next, prev, startBoundary, startBoundaryNr, endBoundaryNr, startEntry, endEntry, endPos, start, end, connected, startConnection, endConnection, reverse, part1, part2;
     next = [];
     prev = [];
-    spots = spots.map(function (spot) {
-      return data.spots[spot - 1];
-    });
     triangles = getTriangles(data.vertices, data.lines);
     graph = getGraph(triangles, data.lines);
     condensed = condense(graph);
     region = getCommonRegion(startSpot, startHolds, endSpot, endHolds, atSpot);
-    console.log(region);
     startEntry = getEntry(startSpot, region, startHolds);
     endEntry = getEntry(endSpot, region, endHolds);
     startBoundaryNr = data.getBoundary(startSpot, startEntry);
     endBoundaryNr = data.getBoundary(endSpot, endEntry);
     start = getIncommingEdges(triangles, graph, startSpot, startEntry);
-    console.log(endEntry);
     end = getIncommingEdges(triangles, graph, endSpot, endEntry);
     if (startBoundaryNr === endBoundaryNr) {
 
@@ -1440,11 +1451,41 @@ var computerMove = (function () {
       prev = [];
       markSpotBoundary(startSpot, region, marked, true);
       i = spots.length;
-      while (i--) {
-        if (marked[spots[i].vertex.id]) {
-          startIncluded = true;
+      if (startEntry === endEntry) {
+        while (i--) {
+          if (marked[spots[i].vertex.id]) {
+            reverse = true;
+          }
+        }
+      } else {
+        if (startSpot.neighbours.length > 0) {
+          startBoundary = data.getBoundaryEdges(startEntry);
+          endPos = startBoundary.indexOf(endEntry);
+          part1 = startBoundary.slice(0, endPos).map(function(edge) {return edge.toSpot;});
+          part2 = startBoundary.slice(endPos, startBoundary.length - 1).map(function(edge) {return edge.toSpot;});
+          i = spots.length;
+          while (i--) {
+            if (part1.indexOf(spots[i]) >= 0 && part2.indexOf(spots[i]) < 0) {
+              reverse = true;
+            }
+          }
+          //i = spots.length;
+          //while (i--) {
+          //  j = 0;
+          //  while (j < startBoundary.length && spots[i] !== startBoundary[j].toSpot) {j++;}
+          //  if (j < endPos) {
+          //    reverse = true;
+          //  }
+          //}
+          //i = endPos;
+          //while (i--) {
+          //  if (spots.indexOf(startBoundary[i].toSpot) < 0) {
+          //    reverse = true;
+          //  }
+          //}
         }
       }
+
       getBubbles(condensed, marked, next, prev, true);
 
       if (startEntry === endEntry) {
@@ -1459,14 +1500,17 @@ var computerMove = (function () {
             });
           }
         }
-        if (startIncluded) {
-          i = startConnection;
-          startConnection = endConnection;
-          endConnection = i;
-        }
       } else {
         startConnection = condensed[start[0]];
         endConnection = condensed[end[0]];
+      }
+      if (reverse) {
+        i = startConnection;
+        startConnection = endConnection;
+        endConnection = i;
+        i = startSpot;
+        startSpot = endSpot;
+        endSpot = i;
       }
       line = markLine(endConnection.id, next, []);
       next[endConnection.id] = undefined;
@@ -1499,18 +1543,28 @@ var computerMove = (function () {
       });
       markSpotBoundary(startSpot, region, marked, false);
       getBubbles(condensed, marked, next, prev, false);
-      line = mergeAllBubbles(condensed, startConnection.id, next, prev);
+//      if (startSpot.id === 1) {
+//        console.log('aoeu');
 //      i = next.length;
 //      while (i--) {
 //        if (next[i] || next[i] === 0) {
 //          data.lines.push([condensed[i].point, condensed[next[i]].point]);
 //        }
 //      }
-  //    data.lines.push(line.map(function(a) {return a.point;}));
+//      }
+      line = mergeAllBubbles(condensed, startConnection.id, next, prev);
+      i = -1;
+      while (++i < line.length) {
+        while (line[i] && line[i].back === line[i + 1]) {
+          line.splice(i, 2);
+          i--;
+        }
+      }
 
     } else {
       line = getShortestPath(condensed, start, end);
     }
+    console.log(line);
     line = line.map(function (edge) {
       return edge.point;
     });
@@ -1522,9 +1576,38 @@ var computerMove = (function () {
     graphics.redrawSpots();
   }
 
+  function interpretMove(text) {
+    var startSpot, startHolds, endSpot, endHolds, newSpot, atSpot, spots, re, match, a;
+    re = /(\d+)(\!?)\((.*)\)(\!?)(\d+)(\!?)(\[(.*)\])?/;
+    match = text.match(re);
+    startSpot = data.spots[Number(match[1]) - 1];
+    startHolds = match[2] !== '!';
+    endSpot = data.spots[Number(match[5]) - 1];
+    endHolds = match[4] !== '!';
+    newSpot = match[3].split('@');
+    if (match[6] === '!') {
+      a = startSpot;
+      startSpot = endSpot;
+      endSpot = a;
+      a = startHolds;
+      startHolds = endHolds;
+      endHolds = a;
+    }
+    atSpot = data.spots[Number(newSpot[1]) - 1];
+    spots = match[8];
+    if (spots) {
+      spots = spots.split(',');
+      spots = spots.map(function (spot) {
+        return data.spots[Number(spot) - 1];
+      });
+    }
+    getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots || []);
+  }
+
   return {
     getTriangles: getTriangles,
-    getMove: getMove
+    getMove: getMove,
+    interpretMove: interpretMove
   };
 }());
 
