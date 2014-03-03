@@ -5,7 +5,8 @@ var data = (function () {
       spots = [],
       vertices = [],
       lines = [],
-      edges = [];
+      edges = [],
+      theGameIsOn = false;
 
   function addVertex(point) {
     point.id = vertices.length;
@@ -611,6 +612,7 @@ var data = (function () {
   }
 
   return {
+    theGameIsOn: theGameIsOn,
     lastRegion: lastRegion,
     vertices: vertices,
     addVertex: addVertex,
@@ -729,7 +731,11 @@ var facade = (function () {
         // Remove the placeholder.
         startSpot.neighbours.pop();
         newLine.push(spot.vertex);
-        console.log(data.addEdge(startSpot, spot, newLine));
+        var moveNotation = data.addEdge(startSpot, spot, newLine);
+        console.log(moveNotation);
+        if (data.theGameIsOn) {
+          ajaxClient.sendMove(moveNotation);
+        }
         newLine = null;
         startSpot = null;
       } else {
@@ -738,13 +744,18 @@ var facade = (function () {
     }
   }
 
+  function startGame() {
+    data.theGameIsOn = true;
+  }
+
   return {
     init: init,
     settings: settings,
     startLine: startLine,
     drawLine: drawLine,
     destroyLine: destroyLine,
-    endLine: endLine
+    endLine: endLine,
+    startGame: startGame
   };
 }());
 

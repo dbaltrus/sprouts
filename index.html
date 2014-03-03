@@ -9,6 +9,12 @@
     <script src="js/delaunay.js" ></script>
     <script src="js/d3.min.js" ></script>
     <script src="js/sprouts.js" ></script>
+    <script src="js/ajax.js" ></script>
+    <div class="moveInput">
+      <input type="text" id="textField" hidden="hidden" disabled="disabled" />
+      <input type="button" id="playerStartsButton" onClick="ajaxClient.playerStarts();" value="I want to start!" />
+      <input type="button" id="computerStartsButton" onClick="ajaxClient.computerStarts();" value="You should go first" />
+    </div>
   </body>
 </html>
 
