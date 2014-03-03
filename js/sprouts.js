@@ -524,13 +524,15 @@ var data = (function () {
       at = (atSpots.length > 0) ? '@' + atSpots[0].id : '';
       newRegionSpots = regionSpots.
         filter(function (spot) { return inside(lastRegion, spot.vertex); });
-      spotList = newRegionSpots.
-        filter(function (spot) { return !dead(spot); }).
-        map(function (spot) { return spot.id; }).join(',');
       i = newRegionSpots.length;
       while (i--) {
         switchRegion(newRegionSpots[i], region, lastRegion);
       }
+      spotList = getRegionSpots(lastRegion).
+        filter(function (spot) {
+          return !dead(spot) &&
+            spot !== startSpot && spot !== endSpot && spot !==  newSpot;}).
+        map(function (spot) { return spot.id; }).join(',');
     }
     // We no longer need to store region and boundary information in the spots.
     startSpot.region = null;
@@ -796,7 +798,7 @@ var graphics = (function () {
     x(function (d) { return scaleX(d.x); }).
     y(function (d) { return scaleY(d.y); }).
     //interpolate('cardinal');
-    interpolate('linear');
+    interpolate('basis');
 
   var triangleGenerator = d3.svg.line().
     x(function (d) { return scaleX(d.x); }).
@@ -1566,7 +1568,7 @@ var computerMove = (function () {
       line = mergeAllBubbles(condensed, startConnection.id, next, prev);
       i = -1;
       while (++i < line.length) {
-        while (line[i] && line[i].back === line[i + 1]) {
+        while (i > 0 && (i + 2) < line.length && line[i] && line[i].back === line[i + 1]) {
           line.splice(i, 2);
           i--;
         }
@@ -1575,7 +1577,6 @@ var computerMove = (function () {
     } else {
       line = getShortestPath(condensed, start, end);
     }
-    console.log(line);
     line = line.map(function (edge) {
       return edge.point;
     });
