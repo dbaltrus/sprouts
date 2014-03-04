@@ -737,6 +737,7 @@ var facade = (function () {
   function endLine(spot) {
     var lastVertex, newSegment;
     if (newLine && (newLine.length > 2)) {
+      newLine = data.lines.pop();
       // Remove the cursor position.
       newLine.pop();
       lastVertex = newLine[newLine.length - 1];
@@ -1505,6 +1506,12 @@ var computerMove = (function () {
           line.splice(i, 2);
           i--;
         }
+      }
+      if (line[0].back === line[1]) {
+        line.shift();
+      }
+      if (line[line.length - 1].back === line[line.length - 2]) {
+        line.pop();
       }
 
     } else {
