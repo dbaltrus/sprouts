@@ -37,9 +37,11 @@ var ajaxClient = (function () {
 
   function sendMove(move) {
     currentMove = move;
-    var data = 'MOVE ' + move;
-    xmlHttpPost(ACTION_ADDRESS, data, handleOkResponse);
-    waitForNewMove();
+    var command = 'MOVE ' + move;
+    xmlHttpPost(ACTION_ADDRESS, command, handleOkResponse);
+    if (!data.gameOver()) {
+      waitForNewMove();
+    }
   }
 
   function handleOkResponse(req) {
@@ -48,11 +50,11 @@ var ajaxClient = (function () {
     }
   }
   function playersTurn() {
-    document.getElementById('textField').value = "Your turn. :)";
+    setTextField("Your turn. :)");
   }
 
   function waitForNewMove() {
-    document.getElementById('textField').value = "Please wait...";
+    setTextField("Please wait...");
     intervalId = window.setInterval(sendGet, 1000);
   }
 
@@ -65,10 +67,14 @@ var ajaxClient = (function () {
     if (req.responseText != currentMove) {
       currentMove = req.responseText;
       console.log('Got move: ' + currentMove);
+      playersTurn();
       computerMove.interpretMove(currentMove);
       window.clearInterval(intervalId);
-      playersTurn();
     }
+  }
+
+  function setTextField(text) {
+    document.getElementById('textField').value = text;
   }
 
   function xmlHttpPost(url, data, callback) {
@@ -104,6 +110,7 @@ var ajaxClient = (function () {
   return {
     playerStarts: playerStarts,
     computerStarts: computerStarts,
-    sendMove: sendMove
+    sendMove: sendMove,
+    setTextField: setTextField
   };
 }());

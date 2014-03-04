@@ -550,6 +550,9 @@ var data = (function () {
     endSpot.region = null;
     startSpot.boundary = null;
     endSpot.boundary = null;
+    if (gameOver()) {
+      ajaxClient.setTextField('Game over!');
+    }
     if (boundary === boundary2) {
       return startSpot.id + holdsExpectation1 +
         '(' + newSpot.id + at + ')' +
@@ -624,9 +627,23 @@ var data = (function () {
     }
   }
 
+  function gameOver() {
+    for (var regionId = 0; regionId <= lastRegion; regionId++) {
+      var lives = 0;
+      getRegionSpots(regionId).forEach(function (spot) {
+        lives += 3 - spot.neighbours.length;
+      });
+      if (lives > 1) {
+        return false;
+      }
+    }
+    console.log('DEAD');
+    return true;
+  }
+
   return {
     theGameIsOn: theGameIsOn,
-    lastRegion: lastRegion,
+    gameOver: gameOver,
     vertices: vertices,
     addVertex: addVertex,
     spots: spots,
@@ -686,7 +703,7 @@ var facade = (function () {
           settings.width / 2 * (1 + Math.sin(i * 2 * Math.PI / settings.numberOfSpots) / 2),
           settings.height / 2 * (1 + Math.cos(i * 2 * Math.PI / settings.numberOfSpots) / 2)
         ));
-      data.addSpot(vertex, data.lastRegion, i);
+      data.addSpot(vertex, 0, i);
     }
   }
 
