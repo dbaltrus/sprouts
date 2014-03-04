@@ -476,9 +476,16 @@ var data = (function () {
     }
   }
 
-  function addEdge(startSpot, endSpot, line) {
-    var line2,
-        startSpotSucc, endSpotSucc,
+  function splitLine(line) {
+    var line1, line2;
+    line1 = line.slice(0, line.length / 2 + 1);
+    line2 = line.slice(line.length / 2);
+    return [line1, line2];
+  }
+
+
+  function addEdge(startSpot, endSpot, line1, line2) {
+    var startSpotSucc, endSpotSucc,
         holdsExpectation1, holdsExpectation2,
         at, atSpots,
         spotListClockwise, spotList,
@@ -486,15 +493,19 @@ var data = (function () {
         newRegionEdge,
         regionSpots, newRegionSpots,
         i;
-    i = line.length - 1;
+    i = line1.length - 1;
     while (--i) {
-      addVertex(line[i]);
+      addVertex(line1[i]);
     }
-    line2 = line.splice(line.length / 2, Number.MAX_VALUE);
-    line.push(line2[0]);
+    i = line2.length - 1;
+    while (--i) {
+      addVertex(line2[i]);
+    }
+    addVertex(line2[0]);
+    lines.push(line1);
     lines.push(line2);
     newSpot = addSpot(line2[0], null, null);
-    startSpotSucc = getSucc(startSpot, line);
+    startSpotSucc = getSucc(startSpot, line1);
     endSpotSucc = getSucc(endSpot, line2);
     holdsExpectation1 = holdsExpectation(startSpotSucc) ? '' : '!';
     holdsExpectation2 = holdsExpectation(endSpotSucc) ? '' : '!';
@@ -504,7 +515,7 @@ var data = (function () {
     if (boundary !== boundary2 && endSpotSucc) {
       setBoundary(endSpotSucc, boundary);
     }
-    connect(startSpot, newSpot, line, region, boundary);
+    connect(startSpot, newSpot, line1, region, boundary);
     connect(newSpot, endSpot, line2, region, boundary);
     if (boundary === boundary2) {
       lastRegion += 1;
@@ -630,6 +641,7 @@ var data = (function () {
     subtract: subtract,
     multiply: multiply,
     addEdge: addEdge,
+    splitLine: splitLine,
     markRegion: markRegion,
     markBoundary: markBoundary,
     unmarkAll: unmarkAll,
@@ -733,7 +745,8 @@ var facade = (function () {
         // Remove the placeholder.
         startSpot.neighbours.pop();
         newLine.push(spot.vertex);
-        var moveNotation = data.addEdge(startSpot, spot, newLine);
+        newLine = data.splitLine(newLine);
+        var moveNotation = data.addEdge(startSpot, spot, newLine[0], newLine[1]);
         console.log(moveNotation);
         if (data.theGameIsOn) {
           ajaxClient.sendMove(moveNotation);
@@ -790,6 +803,8 @@ var graphics = (function () {
 
   var svgLines = d3.select('body').append('svg').attr('tabindex', 1);
 
+  var svgHandLines = d3.select('body').append('svg').attr('tabindex', 1);
+
   var svgSpots = d3.select('body').append('svg').attr('tabindex', 1);
 
   d3.select(window).on('mousemove', mousemove).on('mouseup', mouseup);
@@ -816,6 +831,36 @@ var graphics = (function () {
       line.attr('d', lineGenerator);
     }
     line.classed('selected', function (d) { return d.selected; });
+  }
+
+  function handDrawLine(startSpot, endSpot, line) {
+    var draw;
+    draw = function (line, ease, callback) {
+      var path, totalLength;
+      path = svgHandLines.append("path")
+        .attr("d", lineGenerator(line))
+        .attr("class", "line");
+      totalLength = path.node().getTotalLength();
+      path
+        .attr("stroke-dasharray", totalLength + " " + totalLength)
+        .attr("stroke-dashoffset", totalLength)
+        .transition()
+        .duration(1.5 * totalLength)
+        .ease(ease)
+        .attr("stroke-dashoffset", 0)
+        .each("end", function () {
+          callback.call();
+        });
+    };
+    line = data.splitLine(line);
+    draw(line[0], "cubic-in", function () {
+      draw(line[1], "cubic-out", function () {
+        data.addEdge(startSpot, endSpot, line[0], line[1]);
+        graphics.redrawLines();
+        graphics.redrawSpots();
+        svgHandLines.selectAll('path').remove();
+      });
+    });
   }
 
   function drawTriangles(region) {
@@ -891,6 +936,7 @@ var graphics = (function () {
 
   return {
     redrawLines: redrawLines,
+    handDrawLine: handDrawLine,
     redrawSpots: redrawSpots,
     drawTriangles: drawTriangles
   };
@@ -1583,10 +1629,7 @@ var computerMove = (function () {
     });
     line.unshift(startSpot.vertex);
     line.push(endSpot.vertex);
-    data.lines.push(line);
-    data.addEdge(startSpot, endSpot, line);
-    graphics.redrawLines();
-    graphics.redrawSpots();
+    graphics.handDrawLine(startSpot, endSpot, line);
   }
 
   function interpretMove(text) {
