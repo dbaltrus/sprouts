@@ -853,8 +853,8 @@ var graphics = (function () {
   function handDrawLine(startSpot, endSpot, line) {
     var draw;
     draw = function (line, ease, callback) {
-      callback.call();
-      return;
+      //callback.call();
+      //return;
       var path, totalLength;
       path = svgHandLines.append("path")
         .attr("d", lineGenerator(line))
