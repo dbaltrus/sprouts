@@ -784,7 +784,7 @@ var graphics = (function () {
 
   facade.init();
 
-  var svgTriangles = d3.select('body').append('svg').attr('tabindex', 1);
+  var svgTriangles = d3.select('body').append('svg').attr('tabindex', 1).attr('visibility', 'hidden');
 
   var svgCentroids = d3.select('body').append('svg').attr('tabindex', 1);
 
@@ -797,8 +797,9 @@ var graphics = (function () {
   var lineGenerator = d3.svg.line().
     x(function (d) { return scaleX(d.x); }).
     y(function (d) { return scaleY(d.y); }).
+    interpolate('linear');
     //interpolate('cardinal');
-    interpolate('basis');
+    //interpolate('basis');
 
   var triangleGenerator = d3.svg.line().
     x(function (d) { return scaleX(d.x); }).
@@ -1590,6 +1591,7 @@ var computerMove = (function () {
 
   function interpretMove(text) {
     var startSpot, startHolds, endSpot, endHolds, newSpot, atSpot, spots, re, match, a;
+    graphics.drawTriangles();
     re = /(\d+)(\!?)\((.*)\)(\!?)(\d+)(\!?)(\[(.*)\])?/;
     match = text.match(re);
     startSpot = data.spots[Number(match[1]) - 1];
