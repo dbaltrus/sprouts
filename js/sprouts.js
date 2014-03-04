@@ -296,6 +296,7 @@ var data = (function () {
 
   function markRegion(region) {
     var i;
+    unmarkAll();
     i = edges.length;
     while (i--) {
       if (edges[i].region === region) {
@@ -377,8 +378,7 @@ var data = (function () {
     y = ray[0].y;
     l = d3.pairs(line);
     l.forEach(function (s) {
-      if (straddle(ray[0], ray[1], s[0], s[1]) &&
-        straddle(s[0], s[1], ray[0], ray[1], true, true)) {
+      if (segmentsTouch(ray[0], ray[1], s[0], s[1])) {
         if (s[0].y === y && s[0].y >= s[1].y) {
           return;
         }
@@ -394,8 +394,8 @@ var data = (function () {
   function inside(region, point) {
     var i, ray1, ray2, count1, count2;
     // Cast rays to both sides to eliminate border points.
-    ray1 = [point, {x: Number.MAX_VALUE, y: point.y}];
-    ray2 = [point, {x: Number.MIN_VALUE, y: point.y}];
+    ray1 = [point, {x: facade.settings.width + 10, y: point.y}];
+    ray2 = [point, {x: -10, y: point.y}];
     count1 = 0;
     count2 = 0;
     i = edges.length;
@@ -813,7 +813,6 @@ var graphics = (function () {
     x(function (d) { return scaleX(d.x); }).
     y(function (d) { return scaleY(d.y); }).
     interpolate('linear');
-    //interpolate('cardinal');
     //interpolate('basis');
 
   var triangleGenerator = d3.svg.line().
@@ -836,6 +835,8 @@ var graphics = (function () {
   function handDrawLine(startSpot, endSpot, line) {
     var draw;
     draw = function (line, ease, callback) {
+      callback.call();
+      return;
       var path, totalLength;
       path = svgHandLines.append("path")
         .attr("d", lineGenerator(line))
