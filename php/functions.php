@@ -31,17 +31,28 @@ function handleGetMoves() {
   while ($row = $moves->fetch_assoc()) {
     $moveRepr[] = $row['move'];
   };
+  $isOver = $game['won_type'] > 0;
+  $yourTurn = $isOver ? false : ($game['current_username'] == $_POST['username']);
   echo json_encode(array(
     'gameType' => $game['game_type'],
+    'isOver' => $isOver,
     'numberOfMoves' => sizeof($moveRepr),
     'moves' => $moveRepr,
-    'yourTurn' => ($game['current_username'] == $_POST['username'])
+    'yourTurn' => $yourTurn
   ));
 }
 
 function handleClaimGame() {
   $game = getGame($_POST['gameId']);
   changePlayerUsername($game['game_id'], $_POST['targetUser'], $_POST['username']);
+  echo json_encode(array('status' => 'OK'));
+}
+
+function handleWon() {
+  $game = getGame($_POST['gameId']);
+  $me = yesOrNo($_POST['me']);
+  $resign = yesOrNo($_POST['resign']);
+  changeGameStatus($game, $me, $resign, $_POST['username']);
   echo json_encode(array('status' => 'OK'));
 }
 
@@ -74,6 +85,18 @@ function ensureUsername($username, $player) {
     return $username;
   } else {
     return 'P' . $player;
+  }
+}
+
+function yesOrNo($text, $default = false) {
+  if (strlen($text) > 0) {
+    if (strtolower(substr($text, 0, 1)) == 'y') {
+      return true;
+    } else {
+      return false;
+    }
+  } else {
+    return $default;
   }
 }
 
@@ -179,6 +202,32 @@ function changePlayerUsername($gameId, $userFrom, $userTo) {
   }
 }
 
+function changeGameStatus($game, $me, $resign, $username) {
+  global $db;
+
+  $username = $db->real_escape_string($username);
+
+  if ($username == $game['current_username']) {
+    $won = $me ? $game['whose_turn'] : invertPlayer($game['whose_turn']);
+  } else if ($username == $game['next_username']) {
+    $won = $me ? invertPlayer($game['whose_turn']) : $game['whose_turn'];
+  } else {
+    returnError('You are not part of this game.');
+  }
+
+  $query = "
+    UPDATE games
+    SET won_player = '".$won."',
+      won_type = '".($resign ? 1 : 2)."'
+    WHERE game_id = '".$game['game_id']."';
+  ";
+  //echo $query;
+  $res = $db->query($query);
+  if (!$res || $db->affected_rows != 1) {
+    returnError('Unable to win a game.');
+  }
+}
+
 function getGame($hash) {
   global $db;
   $hash = $db->real_escape_string($hash);
@@ -209,7 +258,8 @@ function getGameForMove($hash, $username) {
     FROM games
     JOIN game_players ON game_players.game_id = games.game_id
     WHERE hash = '".$hash."'
-    AND whose_turn = player;
+    AND whose_turn = player
+    AND won_type = 0;
   ";
   $res = $db->query($query);
   if ($res->num_rows > 0) {
