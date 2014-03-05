@@ -16,6 +16,9 @@ else if ($_POST['action'] == 'makeMove') {
 else if ($_POST['action'] == 'getMoves') {
   handleGetMoves();
 }
+else if ($_POST['action'] == 'claimGame') {
+  handleClaimGame();
+}
 else {
   returnError('Invalid action');
 }

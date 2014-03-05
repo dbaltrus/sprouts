@@ -39,6 +39,14 @@ function handleGetMoves() {
   ));
 }
 
+function handleClaimGame() {
+  $game = getGame($_POST['gameId']);
+  changePlayerUsername($game['game_id'], $_POST['targetUser'], $_POST['username']);
+  echo json_encode(array('status' => 'OK'));
+}
+
+// -------------------------- Utils --------------------------
+
 function returnError($errorString) {
   header('Error!', true, 400);
   echo json_encode(array('error' => $errorString));
@@ -69,7 +77,7 @@ function ensureUsername($username, $player) {
   }
 }
 
-// ----------- Database -----------
+// -------------------------- Database --------------------------
 
 function initDb() {
   global $db;
@@ -145,8 +153,29 @@ function updateGameAfterMove($gameId) {
   ";
   //echo $query;
   $res = $db->query($query);
-  if (!$res) {
+  if (!$res || $db->affected_rows != 1) {
     returnError('Unable to insert a move.');
+  }
+}
+
+function changePlayerUsername($gameId, $userFrom, $userTo) {
+  global $db;
+  $userFrom = $db->real_escape_string($userFrom);
+  $userTo = $db->real_escape_string($userTo);
+
+  if (!($userFrom == 'P1' || $userFrom == 'P2')) {
+    returnError('Can not claim this game.');
+  }
+
+  $query = "
+    UPDATE game_players
+    SET username = '".$userTo."'
+    WHERE username = '".$userFrom."';
+  ";
+  //echo $query;
+  $res = $db->query($query);
+  if (!$res || $db->affected_rows != 1) {
+    returnError('Unable to claim a game.');
   }
 }
 
