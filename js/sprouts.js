@@ -5,8 +5,7 @@ var data = (function () {
       spots = [],
       vertices = [],
       lines = [],
-      edges = [],
-      theGameIsOn = false;
+      edges = [];
 
   function addVertex(point) {
     point.id = vertices.length;
@@ -550,9 +549,6 @@ var data = (function () {
     endSpot.region = null;
     startSpot.boundary = null;
     endSpot.boundary = null;
-    if (gameOver()) {
-      ajaxClient.setTextField('Game over!');
-    }
     if (boundary === boundary2) {
       return startSpot.id + holdsExpectation1 +
         '(' + newSpot.id + at + ')' +
@@ -637,12 +633,10 @@ var data = (function () {
         return false;
       }
     }
-    console.log('DEAD');
     return true;
   }
 
   return {
-    theGameIsOn: theGameIsOn,
     gameOver: gameOver,
     vertices: vertices,
     addVertex: addVertex,
@@ -691,7 +685,9 @@ var facade = (function () {
   var settings = {
     width: 700,
     height: 700,
-    numberOfSpots: 4
+    numberOfSpots: 4,
+    gameId: null,
+    username: null
   };
 
   function init() {
@@ -766,7 +762,7 @@ var facade = (function () {
         newLine = data.splitLine(newLine);
         var moveNotation = data.addEdge(startSpot, spot, newLine[0], newLine[1]);
         console.log(moveNotation);
-        if (data.theGameIsOn) {
+        if (facade.settings.gameId != null) {
           ajaxClient.sendMove(moveNotation);
         }
         newLine = null;
@@ -777,18 +773,13 @@ var facade = (function () {
     }
   }
 
-  function startGame() {
-    data.theGameIsOn = true;
-  }
-
   return {
     init: init,
     settings: settings,
     startLine: startLine,
     drawLine: drawLine,
     destroyLine: destroyLine,
-    endLine: endLine,
-    startGame: startGame
+    endLine: endLine
   };
 }());
 
@@ -813,7 +804,7 @@ var graphics = (function () {
     return facade.settings.height / windowHeight * y;
   }
 
-  facade.init();
+  // facade.init();
 
   var svgTriangles = d3.select('body').append('svg').attr('tabindex', 1).attr('visibility', 'hidden');
 
@@ -850,11 +841,13 @@ var graphics = (function () {
     line.classed('selected', function (d) { return d.selected; });
   }
 
-  function handDrawLine(startSpot, endSpot, line) {
+  function handDrawLine(startSpot, endSpot, line, animate) {
     var draw;
     draw = function (line, ease, callback) {
-      //callback.call();
-      //return;
+      if (!animate) {
+        callback.call();
+        return;
+      }
       var path, totalLength;
       path = svgHandLines.append("path")
         .attr("d", lineGenerator(line))
@@ -878,6 +871,9 @@ var graphics = (function () {
         graphics.redrawLines();
         graphics.redrawSpots();
         svgHandLines.selectAll('path').remove();
+        if (data.gameOver()) {
+          ajaxClient.gameOver();
+        }
       });
     });
   }
@@ -957,7 +953,8 @@ var graphics = (function () {
     redrawLines: redrawLines,
     handDrawLine: handDrawLine,
     redrawSpots: redrawSpots,
-    drawTriangles: drawTriangles
+    drawTriangles: drawTriangles,
+    updateWindow: updateWindow
   };
 }());
 
@@ -1432,7 +1429,7 @@ var computerMove = (function () {
     });
   }
 
-  function getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots) {
+  function getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots, animate) {
     var i, j, triangles, graph, line, line2, condensed, marked, region, next, prev, startBoundary, startBoundaryNr, endBoundaryNr, startEntry, endEntry, endPos, start, end, connected, startConnection, endConnection, reverse, part1, part2;
     next = [];
     prev = [];
@@ -1539,10 +1536,18 @@ var computerMove = (function () {
     });
     line.unshift(startSpot.vertex);
     line.push(endSpot.vertex);
-    graphics.handDrawLine(startSpot, endSpot, line);
+    graphics.handDrawLine(startSpot, endSpot, line, animate);
   }
 
   function interpretMove(text) {
+    interpretMoveFull(text, true);
+  }
+
+  function interpretMoveFast(text) {
+    interpretMoveFull(text, false);
+  }
+
+  function interpretMoveFull(text, animate) {
     var startSpot, startHolds, endSpot, endHolds, newSpot, atSpot, spots, re, match, a;
     graphics.drawTriangles();
     re = /(\d+)(\!?)\((.*)\)(\!?)(\d+)(\!?)(\[(.*)\])?/;
@@ -1568,13 +1573,14 @@ var computerMove = (function () {
         return data.spots[Number(spot) - 1];
       });
     }
-    getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots || []);
+    getMove(startSpot, startHolds, endSpot, endHolds, atSpot, spots || [], animate);
   }
 
   return {
     getTriangles: getTriangles,
     getMove: getMove,
-    interpretMove: interpretMove
+    interpretMove: interpretMove,
+    interpretMoveFast: interpretMoveFast
   };
 }());
 

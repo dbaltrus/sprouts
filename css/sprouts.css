@@ -52,14 +52,16 @@ text {
 
 /* --- Move input box --- */
 
-div.moveInput {
+div.corner {
+  font-family: "Trebuchet MS", Helvetica, sans-serif;
   position: absolute;
   left: 10px;
   top: 10px;
   z-index: 1000;
   padding: 5px;
+  background-color: rgba(240, 240, 240, 0.7);
 }
 
-div.moveInput, .moveInput input {
+div.corner, .corner input {
   border: solid #AAA 1px;
 }

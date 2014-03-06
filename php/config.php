@@ -10,5 +10,10 @@ if (isset($_GET['debug'])) {
 
 include('hash.php');
 
+define('USE_MYSQL_CREDENTIALS', false);
+define('MYSQL_ADDRESS', '');
+define('MYSQL_USER', '');
+define('MYSQL_PASSWORD', '');
 define('MYSQL_DB', 'sprouts');
+
 ?>

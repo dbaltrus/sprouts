@@ -73,7 +73,7 @@ function handleGetGames() {
 // -------------------------- Utils --------------------------
 
 function returnError($errorString) {
-  header('Error!', true, 400);
+  header(' ', true, 400);
   echo json_encode(array('error' => $errorString));
   exit();
 }
@@ -119,11 +119,15 @@ function yesOrNo($text, $default = false) {
 
 function initDb() {
   global $db;
-  $db = new mysqli('localhost');
+  if (USE_MYSQL_CREDENTIALS) {
+    $db = new mysqli(MYSQL_ADDRESS, MYSQL_USER, MYSQL_PASSWORD);
+  } else {
+    $db = new mysqli('localhost');
+  }
   if ($db->connect_error) {
     returnError('Unable to connect to database.');
   }
-  if (!$db->select_db('sprouts')) {
+  if (!$db->select_db(MYSQL_DB)) {
     returnError('Unable to select database.');
   };
 }
