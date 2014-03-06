@@ -13,15 +13,15 @@ function handleJoinGame() {
   $player = playerFromType($game['game_type'], true);
   $username = ensureUsername($_POST['username'], $player);
   insertNewPlayer($username, $player, $game['game_id']);
-  echo json_encode(array('playerId' => $username));
+  echo json_encode(array('playerId' => $username, 'gameType' => $game['game_type']));
 }
 
 function handleMakeMove() {
   $gameId = getGameForMove($_POST['gameId'], $_POST['username']);
   checkMove($_POST['move']);
-  insertMove($gameId, $_POST['move']);
+  $moveId = insertMove($gameId, $_POST['move']);
   updateGameAfterMove($gameId);
-  echo json_encode(array('status' => 'OK'));
+  echo json_encode(array('moveId' => $moveId));
 }
 
 function handleGetMoves() {
@@ -33,10 +33,12 @@ function handleGetMoves() {
   };
   $isOver = $game['won_type'] > 0;
   $yourTurn = $isOver ? false : ($game['current_username'] == $_POST['username']);
+  $lastMove = getLastMoveId($game['game_id']);
   echo json_encode(array(
     'gameType' => $game['game_type'],
     'isOver' => $isOver,
     'numberOfMoves' => sizeof($moveRepr),
+    'lastMove' => $lastMove,
     'moves' => $moveRepr,
     'yourTurn' => $yourTurn
   ));
@@ -90,7 +92,8 @@ function ensureUsername($username, $player) {
 
 function yesOrNo($text, $default = false) {
   if (strlen($text) > 0) {
-    if (strtolower(substr($text, 0, 1)) == 'y') {
+    $firstLetter = strtolower(substr($text, 0, 1));
+    if ($firstLetter == 'y' || $firstLetter == 't') {
       return true;
     } else {
       return false;
@@ -135,6 +138,28 @@ function insertNewGame($user, $type) {
 function insertNewPlayer($user, $player, $id) {
   global $db;
   $user = $db->real_escape_string($user);
+
+  $query = "
+    SELECT *
+    FROM game_players
+    WHERE game_id = ".intval($id)." AND username = '".$user."';
+  ";
+  $result = $db->query($query);
+  if ($result->num_rows > 0) {
+    // Player is already playing this game.
+    return;
+  }
+
+  $query = "
+    SELECT *
+    FROM game_players
+    WHERE game_id = ".intval($id)." AND player = ".intval($player).";
+  ";
+  $result = $db->query($query);
+  if ($result->num_rows > 0) {
+    returnError('You cannot join this game.');
+  }
+    
   $query = "
     INSERT INTO game_players
     (game_id, username, player)
@@ -150,21 +175,17 @@ function insertNewPlayer($user, $player, $id) {
 function insertMove($gameId, $move) {
   global $db;
   $move = $db->real_escape_string($move);
+  $moveId = getLastMoveId($gameId);
   $query = "
     INSERT INTO game_moves (game_id, move_id, move)
-    SELECT ".intval($gameId).", MAX(move_id)+1, '".$move."'
-    FROM (
-      SELECT move_id
-      FROM game_moves
-      WHERE game_id = ".intval($gameId)."
-      UNION SELECT 0
-    ) AS max_move;
+      VALUES (".$gameId.", ".($moveId+1).", '".$move."');
   ";
   //echo $query;
   $res = $db->query($query);
   if (!$res) {
     returnError('Unable to insert a move.');
   }
+  return getLastMoveId($gameId);
 }
 
 function updateGameAfterMove($gameId) {
@@ -272,6 +293,22 @@ function getGameForMove($hash, $username) {
   } else {
     returnError('Unable to find the game to make the move.');
   }
+}
+
+function getLastMoveId($gameId) {
+  global $db;
+
+  $query = "
+    SELECT MAX(move_id) AS move_id
+    FROM game_moves
+    WHERE game_id = ".intval($gameId).";
+  ";
+  $res = $db->query($query);
+  if (!$res || $res->num_rows < 1) {
+    returnError('Unable to get move id.');
+  }
+  $row = $res->fetch_assoc();
+  return intval($row['move_id']);
 }
 
 function getMoves($gameId, $lastMove) {
