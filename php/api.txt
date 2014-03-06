@@ -1,0 +1,70 @@
+Sprouts Server API
+
+Address:  localhost:8090/api.php
+Method:   POST
+
+Every request might also have 'username' parameter.
+
+--------------------------------
+
+Request:
+  'action':     'newGame'
+  'gameType':   [gameType]
+
+Response:
+  'gameId':     [gameId]
+  'playerId':   [playerId]
+
+--------------------------------
+
+Request:
+  'action':     'joinGame'
+  'gameId':     [gameId]
+
+Response:
+  'playerId':   [playerId]
+
+--------------------------------
+
+Request:
+  'action':     'claimGame'
+  'gameId':     [gameId]
+  'targetUser': [username]
+
+Response:
+  'status':     'OK'
+
+--------------------------------
+
+Request:
+  'action':     'getMoves'
+  'gameId':     [gameId]
+  'lastMove':   [moveId]
+
+Response:
+  'gameType':   [gameType]
+  'isOver':     [true/false]
+  'yourTurn':   [true/false]
+  'numberOfMoves':  [num]
+  'moves':      array of [move]
+  
+--------------------------------
+
+Request:
+  'action':     'makeMove'
+  'gameId':     [gameId]
+  'move':       [move]
+
+Response:
+  'moveId':     [moveId]
+
+--------------------------------
+
+Request:
+  'action':     'won'
+  'gameId':     [gameId]
+  'me':         [true/false]
+  'resign':     [true/false]
+
+Response:
+  'status':     'OK'
