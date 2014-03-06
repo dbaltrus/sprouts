@@ -58,6 +58,18 @@ function handleWon() {
   echo json_encode(array('status' => 'OK'));
 }
 
+function handleGetGames() {
+  $games = getGames($_POST['username'], $_POST['targetUser']);
+  $gameIds = array();
+  while ($row = $games->fetch_assoc()) {
+    $gameIds[] = $row['hash'];
+  };
+  echo json_encode(array(
+    'numberOfGames' => sizeof($gameIds),
+    'games' => $gameIds
+  ));
+}
+
 // -------------------------- Utils --------------------------
 
 function returnError($errorString) {
@@ -266,6 +278,30 @@ function getGame($hash) {
   if ($res && $res->num_rows == 1) {
     $row = $res->fetch_assoc();
     return $row;
+  } else {
+    returnError('Unable to find game ID.');
+  }
+}
+
+function getGames($username, $targetUser) {
+  global $db;
+  $username = $db->real_escape_string($username);
+  $targetUser = $db->real_escape_string($targetUser);
+  $query ="
+    SELECT games.*, current.username AS current_username, next.username AS next_username
+    FROM games
+    LEFT JOIN game_players AS current
+      ON games.game_id = current.game_id AND games.whose_turn = current.player
+    LEFT JOIN game_players AS next
+      ON games.game_id = next.game_id AND ((games.whose_turn % 2) + 1) = next.player
+    HAVING next_username='".$targetUser."'
+      AND (current_username='".$username."' OR current_username IS NULL)
+      AND won_type = 0;
+  ";
+  //echo $query;
+  $res = $db->query($query);
+  if ($res) {
+    return $res;
   } else {
     returnError('Unable to find game ID.');
   }

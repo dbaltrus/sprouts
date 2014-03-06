@@ -68,3 +68,13 @@ Request:
 
 Response:
   'status':     'OK'
+
+--------------------------------
+
+Request:
+  'action':     'getGames'
+  'targetUser': [username]
+
+Response:
+  'numberOfGames': [num]
+  'gameIds':    array of [gameId]

@@ -22,6 +22,9 @@ else if ($_POST['action'] == 'claimGame') {
 else if ($_POST['action'] == 'won') {
   handleWon();
 }
+else if ($_POST['action'] == 'getGames') {
+  handleGetGames();
+}
 else {
   returnError('Invalid action');
 }
