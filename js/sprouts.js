@@ -685,9 +685,7 @@ var facade = (function () {
   var settings = {
     width: 700,
     height: 700,
-    numberOfSpots: 4,
-    gameId: null,
-    username: null
+    numberOfSpots: 4
   };
 
   function init() {
@@ -762,9 +760,7 @@ var facade = (function () {
         newLine = data.splitLine(newLine);
         var moveNotation = data.addEdge(startSpot, spot, newLine[0], newLine[1]);
         console.log(moveNotation);
-        if (facade.settings.gameId != null) {
-          ajaxClient.sendMove(moveNotation);
-        }
+        ajaxClient.sendMove(moveNotation);
         newLine = null;
         startSpot = null;
       } else {

@@ -6,11 +6,16 @@ var ajaxClient = (function () {
   var lastMove = 0;
   var intervalId;
 
+  var settings = {
+    gameId: null,
+    username: ''
+  }
+
   function init() {
     if (window.location.hash.length > 1) {
       var params = window.location.hash.substring(1).split(":");
       if (params.length > 1) {
-        facade.settings.username = params[1];
+        settings.username = params[1];
       }
       document.getElementById('mainInput').value = params[0];
       joinGame();
@@ -39,28 +44,31 @@ var ajaxClient = (function () {
     var formData = new FormData();
     formData.append('action', 'newGame');
     formData.append('gameType', gameType);
-    formData.append('username', facade.settings.username);
+    formData.append('username', settings.username);
 
     xmlHttpPost(ACTION_ADDRESS, formData, handleNewGameResponse)
   }
 
   function sendJoin(gameId) {
-    facade.settings.gameId = gameId;
+    settings.gameId = gameId;
 
     var formData = new FormData();
     formData.append('action', 'joinGame');
     formData.append('gameId', gameId);
-    formData.append('username', facade.settings.username);
+    formData.append('username', settings.username);
 
     xmlHttpPost(ACTION_ADDRESS, formData, handleNewGameResponse)
   }
 
   function sendMove(move) {
+    if (settings.gameId == null) {
+      return;
+    }
     var formData = new FormData();
     formData.append('action', 'makeMove');
-    formData.append('gameId', facade.settings.gameId);
+    formData.append('gameId', settings.gameId);
     formData.append('move', move);
-    formData.append('username', facade.settings.username);
+    formData.append('username', settings.username);
 
     xmlHttpPost(ACTION_ADDRESS, formData, handleSendMoveResponse);
   }
@@ -68,9 +76,9 @@ var ajaxClient = (function () {
   function sendGetMoves() {
     var formData = new FormData();
     formData.append('action', 'getMoves');
-    formData.append('gameId', facade.settings.gameId);
+    formData.append('gameId', settings.gameId);
     formData.append('lastMove', lastMove);
-    formData.append('username', facade.settings.username);
+    formData.append('username', settings.username);
 
     xmlHttpPost(ACTION_ADDRESS, formData, handleGetMovesResponse);
   }
@@ -82,24 +90,24 @@ var ajaxClient = (function () {
   function sendWon(me, resigned) {
     var formData = new FormData();
     formData.append('action', 'won');
-    formData.append('gameId', facade.settings.gameId);
+    formData.append('gameId', settings.gameId);
     formData.append('me', '' + me);
     formData.append('resigned', '' + resigned);
-    formData.append('username', facade.settings.username);
+    formData.append('username', settings.username);
 
     xmlHttpPost(ACTION_ADDRESS, formData, handleOkResponse);
   }
 
   function handleNewGameResponse(req) {
     var response = JSON.parse(req.responseText);
-    facade.settings.username = response.playerId;
+    settings.username = response.playerId;
     if (response.gameId != null) {
-      facade.settings.gameId = response.gameId;
+      settings.gameId = response.gameId;
     }
     if (response.gameType != null) {
       facade.settings.numberOfSpots = parseInt(response.gameType);
     }
-    window.location.hash = facade.settings.gameId + ':' + facade.settings.username;
+    window.location.hash = settings.gameId + ':' + settings.username;
     facade.init();
     graphics.updateWindow();
 
@@ -114,6 +122,10 @@ var ajaxClient = (function () {
 
   function handleGetMovesResponse(req) {
     var response = JSON.parse(req.responseText);
+    if (response.moves.length > 0 && response.lastMove <= lastMove) {
+      // We already had these moves
+      return;
+    }
     lastMove = response.lastMove;
     for (var i = 0; i < response.moves.length; i++) {
       var move = response.moves[i];
@@ -214,7 +226,8 @@ var ajaxClient = (function () {
     newGame: newGame,
     joinGame: joinGame,
     sendMove: sendMove,
-    gameOver: gameOver
+    gameOver: gameOver,
+    settings: settings
   };
 }());
 
